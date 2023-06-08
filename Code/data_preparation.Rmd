@@ -1,0 +1,26 @@
+---
+title: "Data_preparation"
+author: "Joshua et. al"
+date: "2023-06-07"
+output: html_document
+---
+
+# Packages
+```{r, warning = FALSE}
+library("tidyverse")
+```
+
+# Loading files
+```{r}
+cover <- readr::read_tsv("../Data/INCLINE_community_species_cover.txt", guess_max = Inf, trim_ws = TRUE)
+traits <- read_tsv("../Data/PFTC6_clean_leaf_traits_2022.txt", guess_max = Inf, trim_ws = TRUE)
+```
+
+# Selecting Incline data and removing problematic entries
+```{r}
+traits <- traits %>% filter(project == "Incline") %>% select(-c(gradient, blockID, turfID, warming, grazing,
+                                                                Nlevel, Namount_kg_ha_y, ...36, ...37))
+# observations can be removed based on: comment, flag, remark, remark_dry_mass and scanning_comment
+# two files: one with NA values for certain traits in a sample and one without NAs
+```
+
