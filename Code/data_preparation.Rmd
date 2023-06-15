@@ -22,5 +22,6 @@ traits <- traits %>% filter(project == "Incline") %>% select(-c(gradient, blockI
                                                                 Nlevel, Namount_kg_ha_y, ...36, ...37))
 # observations can be removed based on: comment, flag, remark, remark_dry_mass and scanning_comment
 # two files: one with NA values for certain traits in a sample and one without NAs
+# comments and remarks can be completely omitted
 ```
 
