@@ -1,0 +1,62 @@
+---
+title: "Standardized Effect Size"
+author: "Joshua"
+date: "2023-10-13"
+output: html_document
+---
+
+# Packages
+```{r echo = FALSE, print = FALSE, message = FALSE}
+library("tidyverse")
+```
+
+# Re-arranging data frame
+```{r}
+raw_traits <- readr::read_csv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.csv", guess_max = Inf)
+traits <- select(raw_traits, c(siteID, blockID, warming, species, trait, value)) %>% na.omit() # one sample removed: DLL3549
+
+# aggregated by site, block and experiment____________________________________________________________________________
+traits1 <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(mean))
+traits1 <- rename(traits1, mean_value = x)
+traits1l <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(length))
+traits1l <- rename(traits1l, n_obs = x)
+traits1sd <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(var)) # defaults to sample variance, not population variance
+traits1sd$x <- sqrt(traits1sd$x)
+traits1sd <- rename(traits1sd, sd = x)
+
+# aggregated by site and experiment__________________________________________________________________________________
+traits2 <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(mean))
+traits2 <- rename(traits2, mean_value = x)
+traits2l <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(length))
+traits2l <- rename(traits2l, n_obs = x)
+traits2sd <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(var)) # defaults to sample variance, not population variance
+traits2sd$x <- sqrt(traits2sd$x)
+traits2sd <- rename(traits2sd, sd = x)
+
+traits3 <- cbind(traits2, traits2l$n_obs, traits2sd$sd)
+traits3 <- rename(traits3, n_obs = `traits2l$n_obs`, sd = `traits2sd$sd`)
+traits3$ID <- paste(traits3$siteID, traits3$species, traits3$trait, sep = "_")
+traits3C <- filter(traits3, warming == "C") # Control
+traits3OTC <- filter(traits3, warming == "W") # Warming
+
+traits3C <- traits3C %>% rename(C_mean = mean_value, C_n = n_obs, C_sd = sd) %>% select(-c(warming))
+traits3OTC <- traits3OTC %>% rename(OTC_mean = mean_value, OTC_n = n_obs, OTC_sd = sd) %>%
+  select(-c(siteID, species, warming, trait))
+
+traits4 <- full_join(traits3C, traits3OTC, by = "ID")
+traits4 <- select(traits4, -c(ID))
+traits4 <- filter(traits4, !is.na(traits4$siteID) & !is.na(traits4$OTC_mean))
+traits4$mean_dif <- traits4$C_mean - traits4$OTC_mean
+traits4$sd_dif <- traits4$C_sd - traits4$OTC_sd # traits 5 is final table
+
+sd_both <- aggregate(traits$value, by = traits[,c(1,4:5)], FUN = na.omit(var)) #standard deviation of both warmed and un-warmed individuals for each site, species and trait
+sd_both <- sd_both %>% mutate(sd_both = sqrt(x), ID = paste(siteID, species, trait, sep = " ")) %>%
+  select(-c(x, siteID, species, trait)) # calculating sd from var
+traits4 <- traits4 %>% mutate(ID = paste(siteID, species, trait, sep = " ")) %>% left_join(sd_both, by = "ID") %>% select(-c(ID))
+
+traits4$SES <- (traits4$C_mean - traits4$OTC_mean) / traits4$C_sd # # Cohen's d: mean(group a) - mean(group b) divided by standard deviation of both OR sd of control group. In that case, Carex capilaris in Gudmedalen lost
+
+traits4$PR <- (traits4$C_mean - traits4$OTC_mean) / traits4$C_mean # Relative Distance Plasticity Index: shows the factor by which the trait value in the OTC increased or decrease, in comparison to the control plot
+
+rm(raw_traits, traits, traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, sd_both)
+```
