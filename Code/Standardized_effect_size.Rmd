@@ -12,7 +12,7 @@ library("tidyverse")
 
 # Re-arranging data frame
 ```{r}
-raw_traits <- readr::read_csv("./data/PFTC6_Incline_clean_leaf_traits_2022.csv", guess_max = Inf)
+raw_traits <- readr::read_csv("./Input data/PFTC6_Incline_clean_leaf_traits_2022.csv", guess_max = Inf)
 traits <- select(raw_traits, c(siteID, blockID, warming, species, trait, value)) %>% na.omit() # one sample removed: DLL3549
 
 # aggregated by site, block and experiment____________________________________________________________________________
