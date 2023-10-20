@@ -60,7 +60,7 @@ traits4$SES <- (traits4$OTC_mean - traits4$C_mean) / traits4$pooled_SD # Cohen's
 
 traits4$PR <- (traits4$OTC_mean - traits4$C_mean) / traits4$C_mean # Relative Distance Plasticity Index: shows the factor by which the trait value in the OTC increased or decreased, in comparison to the control plot
 
-rm(raw_traits, traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
+rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
 
 # Task: compute p-values for the mean differences to see which are significant
@@ -98,17 +98,35 @@ SES_plot <- ggplot(SES_sites, aes(x = siteID, y = `mean SES`, shape = level)) +
 
 # Species specific plasticity and succeptibility to warming
 ```{r}
+distribution <- readr::read_tsv("../Input data/species classifications.txt", guess_max = Inf)
+
 species_sd <- aggregate(traits$value, by = traits[,4:5], FUN = na.omit(var))
 species_sd$x <- sqrt(species_sd$x)
 species_sd <- rename(species_sd, sd = x)
 species_mean <- aggregate(traits$value, by = traits[,4:5], FUN = na.omit(mean))
+species_n <- raw_traits %>% group_by(ID) %>% select(c(species, ID)) %>% slice_sample(n = 1)
+species_n <- as.data.frame(table(species_n$species))
+species_n <- rename(species_n, species = Var1)
+species_abs_SES <- traits4 %>% na.omit() %>% group_by(species) %>% summarise(mean_SES = mean(abs(SES)))
 
 species_sd <- cbind(species_sd, species_mean[,3])
 species_sd <- rename(species_sd, mean = `species_mean[, 3]`)
 species_sd <- species_sd %>% mutate(rel_sd = sd / mean) %>% select(-c(sd, mean))
 species_sd <- species_sd %>% filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g"))
 
-species_sd <- species_sd %>% group_by(species) %>% summarise(mean_sd = mean(rel_sd)) # check the NA with Poa pratensis and manually check the calculation
-# sd quotient: sd/mean -> corrects for the difference in means between the traits
-rm(species_mean)
+species_sd <- species_sd %>% group_by(species) %>% summarise(mean_sd = mean(rel_sd)) %>% left_join(species_n, by = "species") %>%
+  left_join(distribution, by = "species") %>% left_join(species_abs_SES, by = "species")
+
+rm(species_mean, species_n, distribution, species_abs_SES)
+```
+
+# plotting relationship between succeptibility to warming and species type
+```{r}
+p1 <- ggplot(species_sd, aes(x = as.factor(alpine), y = mean_SES)) + geom_boxplot(outlier.alpha = 0) + theme_classic() +
+  geom_jitter(width = 0.3, height = 0, alpha = 0.3) +
+  scale_y_continuous(breaks = c(0, 0.3, 0.6, 0.9, 1.2), limits = c(0, 1.2)) +
+  scale_x_discrete(labels = c("Generalist", "Alpine")) + xlab("") + ylab("Mean SES per species") +
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
+# print 350 x 400
+
 ```
