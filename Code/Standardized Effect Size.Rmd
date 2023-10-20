@@ -13,7 +13,8 @@ library("tidyverse")
 # Re-arranging data frame
 ```{r}
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
-traits <- select(raw_traits, c(siteID, blockID, warming, species, trait, value)) %>% na.omit() # one sample removed: DLL3549
+traits <- select(raw_traits, c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
+  filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g"))# one sample removed: DLL3549
 
 # aggregated by site, block and experiment____________________________________________________________________________
 traits1 <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(mean))
@@ -67,7 +68,7 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 
 # Plotting SES values
 ```{r}
-SES_sites <- traits4 %>% filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g")) %>% select(c(1:3,5,8,14)) %>% na.omit()
+SES_sites <- traits4 %>% select(c(1:3,5,8,14)) %>% na.omit()
 SES_sites <- aggregate(SES_sites$SES, by = SES_sites[,c(1,3)], FUN = mean)
 SES_sites <- SES_sites %>% rename(`mean SES` = x)
 SES_sites$trait <- case_when(SES_sites$trait == "leaf_area_cm2" ~ "LA", SES_sites$trait == "leaf_thickness_mm" ~ "LTH", SES_sites$trait == "sla_cm2_g" ~ "SLA", SES_sites$trait == "plant_height_cm" ~ "H", SES_sites$trait == "ldmc" ~ "LDMC")
@@ -112,7 +113,6 @@ species_abs_SES <- traits4 %>% na.omit() %>% group_by(species) %>% summarise(mea
 species_sd <- cbind(species_sd, species_mean[,3])
 species_sd <- rename(species_sd, mean = `species_mean[, 3]`)
 species_sd <- species_sd %>% mutate(rel_sd = sd / mean) %>% select(-c(sd, mean))
-species_sd <- species_sd %>% filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g"))
 
 species_sd <- species_sd %>% group_by(species) %>% summarise(mean_sd = mean(rel_sd)) %>% left_join(species_n, by = "species") %>%
   left_join(distribution, by = "species") %>% left_join(species_abs_SES, by = "species")
@@ -129,4 +129,26 @@ p1 <- ggplot(species_sd, aes(x = as.factor(alpine), y = mean_SES)) + geom_boxplo
   theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
 # print 350 x 400
 
+```
+
+# t.tests
+```{r}
+all_cmb <- traits %>% select(-c(blockID, warming, value)) %>% group_by(siteID, species, trait) %>%
+                      slice_sample(n = 1) # all combinations of sites, species and traits
+
+out <- list() #output is list of p-values
+for(i in 1:nrow(all_cmb)){ 
+  tryCatch({
+  cmb <- all_cmb[i,1:3]
+  subset <- filter(traits,  siteID == paste(cmb[1,1]) & species == paste(cmb[1,2]) & trait == paste(cmb[1,3]))
+  t_res <- t.test(subset$value ~ subset$warming)
+  out[[i]]  <- paste(t_res$p.value, i)}, error = function(e){})
+} # in every iteration I filter for one species, trait and site, output is list of p-values
+
+out <- out[lapply(out, length) > 0]
+t_results <- out %>% as.data.frame() %>% t() %>% as.data.frame()
+t_results <- t_results %>% separate_wider_delim(V1, delim = " ", names = c("p-value", "iteration"))
+
+all_cmb <- all_cmb %>% rownames_to_column(var = "iteration") %>% left_join(t_results, by = "iteration")
+sign_cmb <- filter(all_cmb, `p-value` < 0.05)
 ```
