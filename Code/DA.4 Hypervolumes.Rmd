@@ -22,7 +22,13 @@ traits <- select(raw_traits, c(siteID, blockID, warming, species, trait, value))
 # colnames in comm and rownames in trait have to match!
 
 # first, compute hypervolume all species and traits, but only in control plots
-trait <- traits %>% filter(warming == "C") %>% aggregate(value, by = c(4:5), FUN = mean)
+trait <- traits %>% filter(warming == "C")
+trait <- aggregate(trait$value, by = trait[,4:5], FUN = na.omit(mean))
+trait <- pivot_wider(trait, id_cols = species, names_from = trait, values_from = x)
+trait <- column_to_rownames(trait, var = "species")
+trait[,1:5] <- scale(trait[,1:5], center = T, scale = T)
+
+comm <- trait %>% mutate(all_sites = 1/35) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
 ```
 
 # Calculating functional metrics
