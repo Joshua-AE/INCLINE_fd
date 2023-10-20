@@ -1,0 +1,38 @@
+---
+title: "DA.4 Hypervolumes"
+author: "Joshua et al."
+date: "2023-10-20"
+output: html_document
+---
+# Packages
+```{r echo = FALSE, print = FALSE, message = FALSE, warning = FALSE}
+library("tidyverse")
+library("BAT") # computes functional metrics based on Mammola and Cardoso (2020)
+library("hypervolume") # computes hypervolumes based on XY
+```
+
+# Re-arranging data frame
+```{r}
+raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
+traits <- select(raw_traits, c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
+  filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g"))# one sample removed: DLL3549
+
+# all rows in the comm matrix have to sum to 1. rownames = sampling units, colnames = species
+# traits in the traits table should be scaled, centered and not highly correlated. rownames = species, colnames = traits.
+# colnames in comm and rownames in trait have to match!
+
+# first, compute hypervolume all species and traits, but only in control plots
+trait <- traits %>% filter(warming == "C") %>% aggregate(value, by = c(4:5), FUN = mean)
+```
+
+# Calculating functional metrics
+```{r}
+set.seed(1)
+hypervolume <- kernel.build(comm = comm, trait = trait, distance = "euclidean", method.hv = "gaussian",
+                             abund = TRUE, weight = NULL, axes = 0, convert = 0)
+
+fric3 <- kernel.alpha(hypervolume)
+fric3 <- as.data.frame(fric3)
+fric3 <- rownames_to_column(fric3, var = "Plot")
+
+```
