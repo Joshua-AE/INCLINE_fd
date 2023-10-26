@@ -14,31 +14,181 @@ library("hypervolume") # computes hypervolumes based on XY
 # Re-arranging data frame
 ```{r}
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
-traits <- select(raw_traits, c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
+traits <- select(raw_traits, c(ID, siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
   filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g"))# one sample removed: DLL3549
 
 # all rows in the comm matrix have to sum to 1. rownames = sampling units, colnames = species
 # traits in the traits table should be scaled, centered and not highly correlated. rownames = species, colnames = traits.
 # colnames in comm and rownames in trait have to match!
-
-# first, compute hypervolume all species and traits, but only in control plots
-trait <- traits %>% filter(warming == "C")
-trait <- aggregate(trait$value, by = trait[,4:5], FUN = na.omit(mean))
-trait <- pivot_wider(trait, id_cols = species, names_from = trait, values_from = x)
-trait <- column_to_rownames(trait, var = "species")
-trait[,1:5] <- scale(trait[,1:5], center = T, scale = T)
-
-comm <- trait %>% mutate(all_sites = 1/35) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
 ```
 
-# Calculating functional metrics
+# Hypervolume of all species in the control plots [mean values]
 ```{r}
+trait_C <- traits %>% filter(warming == "C")
+trait_C <- aggregate(trait_C$value, by = trait_C[,5:6], FUN = na.omit(mean))
+trait_C <- pivot_wider(trait_C, id_cols = species, names_from = trait, values_from = x)
+
+trait_W <- traits %>% filter(warming == "W")
+trait_W <- aggregate(trait_W$value, by = trait_W[,5:6], FUN = na.omit(mean))
+trait_W <- pivot_wider(trait_W, id_cols = species, names_from = trait, values_from = x)
+
+trait_CW <- aggregate(traits$value, by = traits[,5:6], FUN = na.omit(mean))
+trait_CW <- pivot_wider(trait_CW, id_cols = species, names_from = trait, values_from = x)
+
+trait_C <- semi_join(trait_C, trait_W, by = "species")
+trait_W <- semi_join(trait_W, trait_C, by = "species")
+trait_CW <- semi_join(trait_CW, trait_C, by = "species")
+
+trait_C <- column_to_rownames(trait_C, var = "species")
+trait_C[,1:5] <- scale(trait_C[,1:5], center = T, scale = T)
+trait_W <- column_to_rownames(trait_W, var = "species")
+trait_W[,1:5] <- scale(trait_W[,1:5], center = T, scale = T)
+trait_CW <- column_to_rownames(trait_CW, var = "species")
+trait_CW[,1:5] <- scale(trait_CW[,1:5], center = T, scale = T)
+
+#it does not matter for fric computation if each species has abundance of 1 or 1/35 or 1/38 etc.
+comm_C <- trait_C %>% mutate(all_sites = 1) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
+comm_W <- trait_W %>% mutate(all_sites = 1) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
+comm_CW <- trait_CW %>% mutate(all_sites = 1) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
+
+out <- list()
+for(i in 1:100) {
+  set.seed(0+i)
+  print(i)
+  hp <- kernel.build(comm = comm_CW, trait = trait_CW, distance = "euclidean", method.hv = "gaussian",
+                             abund = TRUE, weight = NULL, axes = 0, convert = 0)
+  out[[i]]  <- kernel.alpha(hp)
+}
+
+fric_CW <- as.data.frame(out)
+colnames(fric_CW) <- c(1:100)
+fric_CW <- fric_CW %>% t() %>% as.data.frame() %>% rename(fric_CW = Richness)
+
+fric_all <- cbind(fric_C, fric_CW, fric_W)
+fric_all <- pivot_longer(fric_all, cols = 1:3, names_to = "warming", values_to = "fric")
+
+histos <- ggplot(fric_all, aes(x = fric, color = warming)) + 
+  geom_density(data = subset(fric_all, warming == 'fric_C'),fill = "red", alpha = 0.2) +
+  geom_density(data = subset(fric_all, warming == 'fric_W'),fill = "blue", alpha = 0.2) +
+  geom_density(data = subset(fric_all, warming == 'fric_CW'),fill = "green", alpha = 0.2) +
+  theme_classic() + scale_colour_manual(name  = "", breaks=c("fric_C", "fric_W", "fric_CW"), labels = c("C", "OTC", "Both"), values=c("red", "blue", "green")) +
+  guides(color = guide_legend(override.aes = list(fill = c("red", "blue", "green")))) + theme(legend.position = c(0.9, 0.9))
+# print 400 x 300
+```
+
+# Hypervolume of all samples in the control plots
+```{r}
+# some species are over-represented
+# how strongly are traits correlated? Do PCA if too correlated!
+trait <- traits %>% filter(warming == "C") %>% select(c(ID, trait, value))
+trait <- pivot_wider(trait, id_cols = ID, names_from = trait, values_from = value)
+trait <- trait %>% column_to_rownames(var = "ID")  %>% na.omit() # 35 samples with incomplete trait data removed
+trait[,1:5] <- scale(trait[,1:5], center = T, scale = T)
+
+comm <- trait %>% mutate(all_sites = 1/688) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
+
+# trait correlations
+cor_matrix1 <- pairs.panels(trait[,1:5], smooth = TRUE, ellipse = FALSE, method = "spearman", hist.col = 5, stars = TRUE)
+cor_matrix2 <- trait %>% cor(method = "spearman") %>% round(2) %>% abs() # same as pairs.panel
+cor_matrix2[cor_matrix2 == 1] <- NA
+#Spearman's ρ is 1 if correlation is monotonic and Pearson's r is 1 if correlation is monotonic and linear. If ρ > r,  correlation is monotonic but not linear.
+test <- prcomp(trait, center = F, scale. = F)
+summary(test)
 set.seed(1)
 hypervolume <- kernel.build(comm = comm, trait = trait, distance = "euclidean", method.hv = "gaussian",
-                             abund = TRUE, weight = NULL, axes = 0, convert = 0)
+                             abund = FALSE, weight = NULL, axes = 0, convert = 0)
 
-fric3 <- kernel.alpha(hypervolume)
-fric3 <- as.data.frame(fric3)
-fric3 <- rownames_to_column(fric3, var = "Plot")
+fric <- kernel.alpha(hypervolume)
+fric <- as.data.frame(fric)
 
+```
+
+# site-specific hypervolumes
+```{r}
+trait_C <- traits %>% filter(warming == "C")
+trait_C <- aggregate(trait_C$value, by = trait_C[,5:6], FUN = na.omit(mean))
+trait_C <- pivot_wider(trait_C, id_cols = species, names_from = trait, values_from = x)
+
+trait_gud <- traits %>% filter(warming == "W" & siteID == "Gudmedalen") # species in OTCs of Gudmedalen
+trait_gud <- aggregate(trait_gud$value, by = trait_gud[,5:6], FUN = na.omit(mean))
+trait_gud <- pivot_wider(trait_gud, id_cols = species, names_from = trait, values_from = x)
+trait_gud <- semi_join(trait_gud, trait_C, by = "species") # all species in Gudmedalen OTCs for which we have control plot samples 
+
+trait_skj <- traits %>% filter(warming == "W" & siteID == "Skjelingahaugen") # species in OTCs of Skjelingahaugen
+trait_skj <- aggregate(trait_skj$value, by = trait_skj[,5:6], FUN = na.omit(mean))
+trait_skj <- pivot_wider(trait_skj, id_cols = species, names_from = trait, values_from = x)
+trait_skj <- semi_join(trait_skj, trait_C, by = "species")
+
+trait_ulv <- traits %>% filter(warming == "W" & siteID == "Ulvehaugen") # species in OTCs of Ulvehaugen
+trait_ulv <- aggregate(trait_ulv$value, by = trait_ulv[,5:6], FUN = na.omit(mean))
+trait_ulv <- pivot_wider(trait_ulv, id_cols = species, names_from = trait, values_from = x)
+trait_ulv <- semi_join(trait_ulv, trait_C, by = "species")
+
+C_gud <- semi_join(trait_C, trait_gud, by = "species") # all species from control plots that are also in Gudmedalen OTCs
+C_skj <- semi_join(trait_C, trait_skj, by = "species")
+C_ulv <- semi_join(trait_C, trait_ulv, by = "species")
+
+trait_gud <- column_to_rownames(trait_gud, var = "species")
+trait_gud[,1:5] <- scale(trait_gud[,1:5], center = T, scale = T)
+trait_skj <- column_to_rownames(trait_skj, var = "species")
+trait_skj[,1:5] <- scale(trait_skj[,1:5], center = T, scale = T)
+trait_ulv <- column_to_rownames(trait_ulv, var = "species")
+trait_ulv[,1:5] <- scale(trait_ulv[,1:5], center = T, scale = T)
+C_gud <- column_to_rownames(C_gud, var = "species")
+C_gud[,1:5] <- scale(C_gud[,1:5], center = T, scale = T)
+C_skj <- column_to_rownames(C_skj, var = "species")
+C_skj[,1:5] <- scale(C_skj[,1:5], center = T, scale = T)
+C_ulv <- column_to_rownames(C_ulv, var = "species")
+C_ulv[,1:5] <- scale(C_ulv[,1:5], center = T, scale = T)
+
+comm_gud <- trait_gud %>% mutate(all_sites = 1) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
+comm_skj <- trait_skj %>% mutate(all_sites = 1) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
+comm_ulv <- trait_ulv %>% mutate(all_sites = 1) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
+comm_C_gud <- C_gud %>% mutate(all_sites = 1) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
+comm_C_skj <- C_skj %>% mutate(all_sites = 1) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
+comm_C_ulv <- C_ulv %>% mutate(all_sites = 1) %>% select(-c(ldmc, leaf_area_cm2, leaf_thickness_mm, plant_height_cm, sla_cm2_g)) %>% t()
+
+out <- list()
+for(i in 1:100) {
+  set.seed(0+i)
+  print(i)
+  hp <- kernel.build(comm = comm_ulv, trait = trait_ulv, distance = "euclidean", method.hv = "gaussian",
+                             abund = FALSE, weight = NULL, axes = 0, convert = 0)
+  out[[i]]  <- kernel.alpha(hp)
+}
+
+fric_ulv <- as.data.frame(out)
+colnames(fric_ulv) <- c(1:100)
+fric_ulv <- fric_ulv %>% t() %>% as.data.frame() %>% rename(fric_ulv = Richness)
+
+fric_all <- cbind(fric_ulv, fric_C_ulv)
+fric_all <- pivot_longer(fric_all, cols = 1:2, names_to = "warming", values_to = "fric")
+
+histos <- ggplot(fric_all, aes(x = fric, color = warming)) + 
+  geom_density(data = subset(fric_all, warming == 'fric_ulv'),fill = "red", alpha = 0.2) +
+  geom_density(data = subset(fric_all, warming == 'fric_C_ulv'),fill = "blue", alpha = 0.2) +
+  theme_classic() + scale_colour_manual(name  = "", breaks=c("fric_ulv", "fric_C_ulv"), labels = c("OTC", "Control"), values=c("red", "blue")) +
+  guides(color = guide_legend(override.aes = list(fill = c("red", "blue")))) + theme(legend.position = c(0.2, 0.9))
+
+```
+
+```{r}
+rownames(C_gud) <- paste("C", rownames(C_gud), sep = "_") # ra-naming species to indicate they are from control plots
+gud_trait <- rbind(C_gud, trait_gud) # binding the different mean traits together
+comm_C_gud[,1:22] <- 0
+colnames(comm_C_gud) <- paste("C", colnames(comm_C_gud), sep = "_")
+gud_comm <- cbind(comm_gud, comm_C_gud)
+gud_comm <- rbind(gud_comm, c(rep(0, 22), rep(1, 22)))
+rownames(gud_comm) <- c("OTC", "Control") # total Beta diversity between Gud OTC and control is 0.238
+
+out <- list()
+for(i in 1:3) {
+  set.seed(0+i)
+  print(i)
+hvlist = kernel.build(comm = gud_comm, trait = gud_trait, distance = "euclidean", method.hv = "gaussian",
+                             abund = FALSE, weight = NULL, axes = 0, convert = 0)
+beta <- kernel.beta(hvlist)
+out[[i]] <- beta$Btotal[1]
+}
+beta_gud <- out %>% as.data.frame() %>% t() %>% as.data.frame()
 ```
