@@ -1,0 +1,450 @@
+---
+title: "PFTC6 INCLINE - Variance Partitioning"
+author: "Sonya R. Geange, et al. "
+output: html_notebook
+---
+
+
+
+```{r}
+#### Load libraries----
+library(tidyverse)
+library(lme4)
+library(reshape2)
+library(cowplot) #to arrange multiple plots in a figure
+library(gcookbook)
+library(readr)
+
+#### Load data ----
+# Change eventually to use datadownloader to call from OSF repository
+# Data imported as long format
+raw_traits <- readr::read_tsv("./Input data/PFTC6_Incline_clean_leaf_traits_2022.txt",
+                              guess_max = Inf)
+# Check class assignments
+str(raw_traits)
+# Remove NA's
+traits <- select(raw_traits, c(siteID, elevation_m_asl, blockID, warming, species, individual_nr, trait, value)) %>% na.omit() %>%
+  filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g", "dry_mass_g"))# one sample removed: DLL3549
+
+# Remove whitespace in species string
+traits$species <- gsub(" ", "_", traits$species)
+
+# Add precipitation as additional option for explaining site
+traits$precip <- as.numeric(recode(traits$siteID, 'Ulvehaugen'='1126',
+                                'Gudmedalen'='2130',
+                                'Skjelingahaugen' = '3402'))
+# Add temperature as additional option for explaining site
+traits$temp <- as.numeric(recode(traits$siteID, 'Ulvehaugen'='6.93',
+                                'Gudmedalen'='6.53',
+                                'Skjelingahaugen' = '6.53'))
+
+
+```
+
+
+
+```{r}
+# Task: Perform variance analysis of traits
+
+# Define custom functions
+`%notin%` <- Negate(`%in%`)
+
+# Sets a theme for the plots
+blank_theme <- theme(panel.grid.major = element_blank(), #removes major axis grid lines
+                     panel.grid.minor = element_blank(), #removes minor axis grid lines
+                     panel.background = element_blank(), #removes the default grey background
+                     legend.key = element_blank(), #removes background behind legend keys
+                     axis.line = element_line(colour = "black"), #makes axis lines black
+                     text = element_text (size = 15), #sets all text size to 20 
+                     axis.text = element_text(size = 12)) #sets axis text to size 15  
+
+
+
+#### Data Organization ####
+# Add concatenated name
+traits$uniqueID <- paste0(traits$blockID, "_", traits$warming, "_", traits$species, "_", traits$individual_nr)
+
+# Add concatenate col for siteID, warming, species
+traits$uniqueID_site <- paste0(traits$siteID, "_", traits$warming, "_", traits$species)
+
+# Check duplicates
+dups <- traits %>%
+  dplyr::group_by(siteID, blockID, warming, species, individual_nr, trait) %>%
+  dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+  dplyr::filter(n > 1L)
+
+# Seems ULV6 Alchemilla sp, has two rows of seperate data.
+# Ulvehaugen Ulv_6 W Alchemilla sp 1
+# Remove for now- check in main cleaning script later on.
+traits <- subset(traits, uniqueID != "Ulv_6_W_Alchemilla_sp_1")
+
+
+# Pivot wider
+traits_wide <- traits %>% 
+  pivot_wider(names_from = trait, values_from = value, values_fill = NA)
+
+#> # Remove incomplete rows, i.e. where an individual doesn't have all traits recorded.
+traits_wide <- na.omit(traits_wide) 
+
+# Need balanced data - so check out how many individual there are per sites/treatment etc
+individual_count <- traits_wide %>% 
+  group_by(siteID, warming, species, blockID) %>% 
+  summarize(n = n())
+
+
+
+#check out how many leaves each site/ treatment has ignoring block sampling
+site_leaf_count <- traits_wide %>% 
+  group_by(uniqueID_site, siteID, warming, species) %>% 
+  summarize(n = n())
+
+
+
+# TODO: For wider study - Remove samples with less than 3 individuals for a given site, warming treatment and species
+#filter out individuals that have 1-2 leaves only
+# traits_wide_v2 <-subset(traits_wide,
+#                         uniqueID_site != "Gudmedalen_C_Carex_capillaris" &
+#                         uniqueID_site !="Gudmedalen_W_Betula_nana" &
+#                         uniqueID_site !="Gudmedalen_W_Carex_capillaris" & 
+#                         uniqueID_site != "Skjelingahaugen_C_Viola_biflora" &
+#                         uniqueID_site !="Ulvehaugen_C_Achillea_millefolium" &
+#                         uniqueID_site !="Ulvehaugen_C_Achillea_millefolium" &)
+
+# Subset to only key 16 species we collected across all the sites and treatments
+core_16_species <- c("Achillea_millefolium",
+"Agrostis_capillaris",
+"Alchemilla_alpina",
+"Anthoxanthum_odoratum",
+"Bistorta_vivipara",
+"Campanula_rotundifolia",
+"Carex_bigelowii",
+"Carex_vaginata",
+"Festuca_rubra",
+"Leontodon_autumnalis",
+"Poa_alpina",
+"Salix_herbacea",
+"Saussurea_alpina",
+"Sibbaldia_procumbens",
+"Thalictrum_alpinum",
+"Veronica_alpina")
+
+traits_wide_16 <- traits_wide %>% 
+  filter(species %in% core_16_species)
+
+#convert traits_wide back into long format 
+traits_16 <- traits_wide_16 |> 
+  pivot_longer(names_to = "trait", values_to = "value", cols = 11:16)
+
+
+#plotting a histogram for each trait to determine if the data is skewed
+(traits_16 %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram() +
+  facet_wrap(~trait, scales = "free") +
+  labs(title = "16 Species Trait Distribution"))
+
+#log transforming traits because of skew
+traits_16_log <- traits_16 %>% 
+  mutate(value = log(value))
+
+#plotting log transformed traits to confirm skew is gone
+(traits_16_log %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram() +
+  facet_wrap(~trait, scales = "free") + 
+  labs(title = "16 Species Trait Distribution Logged"))
+
+#### Model Structure 2 - functional group/taxon/site/individual####
+
+output2 <- data.frame(NULL)
+for(i in unique(traits_16_log$trait)){
+  #This code all comes from Julie Messier's web site
+  mod2<-lmer(value~1+(1|warming/species/siteID), 
+            data=traits_16_log %>% filter(trait == i), 
+            na.action=na.omit)
+  variances2<-c(unlist(lapply(VarCorr(mod2),diag)), 
+               attr(VarCorr(mod2),"sc")^2) #get variances
+  
+  var.comp2<-variances2/sum(variances2)
+  
+  var.comp2<-as.data.frame(var.comp2) #creates a dataframe from the values
+  var.comp2<-cbind(rownames(var.comp2),data.frame(var.comp2,row.names=NULL)) #changes row names into a column
+  var.comp2<-melt(var.comp2,value.name="value") #makes var.comp into a variable
+  names(var.comp2)[1]<-"Scale" #changes the first column name to "scale"
+  
+  var.comp2$value<-var.comp2$value *100 #changes values into % 
+  
+  var.comp2<- var.comp2 %>%
+    mutate(Scale = plyr::mapvalues(Scale, from = c(""), to = c("Between Individuals and Unexplained"))) %>% 
+    mutate(Scale = factor(Scale, levels = c("Between Individuals and Unexplained","siteID:(species:warming).(Intercept)","species:warming.(Intercept)","warming.(Intercept)"))) %>% 
+    # group_by(variable)%>%
+    arrange(variable, Scale)%>%
+    mutate(labypos=100-(cumsum(value)-0.5*value)) %>%
+    #subset(value>1) %>% #this line removes variance partitioning less than 1% so that there are no zero labels
+    mutate(trait = i)
+  
+  output2 <- bind_rows(output2, var.comp2)
+} 
+
+
+
+
+#Colour palette for graph: https://paletton.com/#uid=54n140kjJo3hfJliyuOl7gxlT9k
+#Colour palette is in low saturation 
+#Variance Partitioning Plot 2 
+VP_legend_title <- "Ecological Scales"
+VP_Plot2<-ggplot(output2, 
+                 aes(x=trait, y=value))+
+  geom_col(aes(fill=Scale))+
+  geom_text(aes(y=labypos, label=round(value,digits = 1)),colour="white", size = 5)+
+  scale_fill_manual (VP_legend_title, values = c("#5D3640","#8A5462","#C68596","#8977AA","#4F4266"),
+                    #values = c("#77293e","#ae435f","#f27092","#543a83","#37245a"),
+                     labels = c("Between individuals + Unexplained",
+                                "Between sites within species",
+                                "Between species within warming treatment",
+                                "Between warming treatment"))+
+  ylab("Proportion of Variance (%)")+
+  xlab("Log (natural) Transformed Traits")+
+  blank_theme+
+  labs(fill = "Ecological Scale")+
+  scale_y_continuous(expand=c(0,0),limits=c(0,100.1))+#this forces the graph to actually start at 0% and end at 100%
+  scale_x_discrete(limits = c("plant_height_cm",
+                              # "wet_mass_g", # not really interesting on it's own
+                              "dry_mass_g", "ldmc", "leaf_area_cm2","sla_cm2_g","leaf_thickness_mm"),
+                   labels = c("plant_height_cm" = "Plant Height (cm)",
+                              # "wet_mass_g"="Wet Mass (g)", 
+                              "dry_mass_g"="Dry Mass (g)",
+                              "ldmc"="LDMC", 
+                              "leaf_area_cm2"=expression(paste("Leaf Area "(cm^2))),
+                              "sla_cm2_g"=expression("SLA "(cm^2/g)), 
+                              "leaf_thickness_mm"="Leaf Thickness (mm)")) +
+  theme(axis.text.x = element_text(angle = 300, hjust = 0))
+  #labs(title = "functional group/taxon/site/individual")
+VP_Plot2
+
+# Output for Control Treatment Only
+traits_16_log_C <- traits_16_log %>% 
+  filter(warming == "C")
+traits_16_log_W <- traits_16_log %>% 
+  filter(warming == "W")
+
+output2_C <- data.frame(NULL)
+for(i in unique(traits_16_log_C$trait)){
+  #This code all comes from Julie Messier's web site
+  mod2_C<-lmer(value~1+(1|species/siteID), 
+            data=traits_16_log_C %>% filter(trait == i), 
+            na.action=na.omit)
+  variances2_C<-c(unlist(lapply(VarCorr(mod2_C),diag)), 
+               attr(VarCorr(mod2_C),"sc")^2) #get variances
+  
+  var.comp2_C<-variances2_C/sum(variances2_C)
+  
+  var.comp2_C<-as.data.frame(var.comp2_C) #creates a dataframe from the values
+  var.comp2_C<-cbind(rownames(var.comp2_C),data.frame(var.comp2_C,row.names=NULL)) #changes row names into a column
+  var.comp2_C<-melt(var.comp2_C,value.name="value") #makes var.comp into a variable
+  names(var.comp2_C)[1]<-"Scale" #changes the first column name to "scale"
+  
+  var.comp2_C$value<-var.comp2_C$value *100 #changes values into % 
+  
+  var.comp2_C<- var.comp2_C %>%
+    mutate(Scale = plyr::mapvalues(Scale, from = c(""), to = c("Between Individuals and Unexplained"))) %>% 
+    mutate(Scale = factor(Scale, levels = c("Between Individuals and Unexplained","siteID:species.(Intercept)","species.(Intercept)"))) %>% 
+    # group_by(variable)%>%
+    arrange(variable, Scale)%>%
+    mutate(labypos=100-(cumsum(value)-0.5*value)) %>%
+    #subset(value>1) %>% #this line removes variance partitioning less than 1% so that there are no zero labels
+    mutate(trait = i)
+  
+  output2_C <- bind_rows(output2_C, var.comp2_C)
+} 
+
+
+
+
+#Colour palette for graph: https://paletton.com/#uid=54n140kjJo3hfJliyuOl7gxlT9k
+#Colour palette is in low saturation 
+#Variance Partitioning Plot 2 
+VP_legend_title <- "Ecological Scales"
+VP_Plot2_C<-ggplot(output2_C, 
+                 aes(x=trait, y=value))+
+  geom_col(aes(fill=Scale))+
+  geom_text(aes(y=labypos, label=round(value,digits = 1)),colour="white", size = 5)+
+  scale_fill_manual (VP_legend_title, values = c("#5D3640","#8A5462","#C68596","#8977AA","#4F4266"),
+                    #values = c("#77293e","#ae435f","#f27092","#543a83","#37245a"),
+                     labels = c("Between individuals + Unexplained",
+                                "Between sites within species",
+                                "Between species"))+
+  coord_flip() +
+  ylab("Proportion of Variance (%)")+
+  xlab("Log (natural) Transformed Traits")+
+  blank_theme+
+  labs(fill = "Ecological Scale")+
+  scale_y_continuous(expand=c(0,0),limits=c(0,100.1))+#this forces the graph to actually start at 0% and end at 100%
+  scale_x_discrete(limits = c("plant_height_cm",
+                              # "wet_mass_g", # not really interesting on it's own
+                              "dry_mass_g", "ldmc", "leaf_area_cm2","sla_cm2_g","leaf_thickness_mm"),
+                   labels = c("plant_height_cm" = "Plant Height (cm)",
+                              # "wet_mass_g"="Wet Mass (g)", 
+                              "dry_mass_g"="Dry Mass (g)",
+                              "ldmc"="LDMC", 
+                              "leaf_area_cm2"=expression(paste("Leaf Area "(cm^2))),
+                              "sla_cm2_g"=expression("SLA "(cm^2/g)), 
+                              "leaf_thickness_mm"="Leaf Thickness (mm)")) +
+  theme(axis.text.x = element_text(angle = 300, hjust = 0)) +
+  labs(title = "Control")
+VP_Plot2_C
+
+
+# Warming Treatment
+
+output2_W <- data.frame(NULL)
+for(i in unique(traits_16_log_W$trait)){
+  #This code all comes from Julie Messier's web site
+  mod2_W<-lmer(value~1+(1|species/siteID), 
+            data=traits_16_log_W %>% filter(trait == i), 
+            na.action=na.omit)
+  variances2_W<-c(unlist(lapply(VarCorr(mod2_W),diag)), 
+               attr(VarCorr(mod2_W),"sc")^2) #get variances
+  
+  var.comp2_W<-variances2_W/sum(variances2_W)
+  
+  var.comp2_W<-as.data.frame(var.comp2_W) #creates a dataframe from the values
+  var.comp2_W<-cbind(rownames(var.comp2_W),data.frame(var.comp2_W,row.names=NULL)) #changes row names into a column
+  var.comp2_W<-melt(var.comp2_W,value.name="value") #makes var.comp into a variable
+  names(var.comp2_W)[1]<-"Scale" #changes the first column name to "scale"
+  
+  var.comp2_W$value<-var.comp2_W$value *100 #changes values into % 
+  
+  var.comp2_W<- var.comp2_W %>%
+    mutate(Scale = plyr::mapvalues(Scale, from = c(""), to = c("Between Individuals and Unexplained"))) %>% 
+    mutate(Scale = factor(Scale, levels = c("Between Individuals and Unexplained","siteID:species.(Intercept)","species.(Intercept)"))) %>% 
+    # group_by(variable)%>%
+    arrange(variable, Scale)%>%
+    mutate(labypos=100-(cumsum(value)-0.5*value)) %>%
+    #subset(value>1) %>% #this line removes variance partitioning less than 1% so that there are no zero labels
+    mutate(trait = i)
+  
+  output2_W <- bind_rows(output2_W, var.comp2_W)
+} 
+
+
+
+
+#Colour palette for graph: https://paletton.com/#uid=54n140kjJo3hfJliyuOl7gxlT9k
+#Colour palette is in low saturation 
+#Variance Partitioning Plot 2 
+VP_legend_title <- "Ecological Scales"
+VP_Plot2_W<-ggplot(output2_W, 
+                 aes(x=trait, y=value))+
+  geom_col(aes(fill=Scale))+
+  geom_text(aes(y=labypos, label=round(value,digits = 1)),colour="white", size = 5)+
+  scale_fill_manual (VP_legend_title, values = c("#5D3640","#8A5462","#C68596","#8977AA","#4F4266"),
+                    #values = c("#77293e","#ae435f","#f27092","#543a83","#37245a"),
+                     labels = c("Between individuals + Unexplained",
+                                "Between sites within species",
+                                "Between species"))+
+  coord_flip() +
+  ylab("Proportion of Variance (%)")+
+  xlab("Log (natural) Transformed Traits")+
+  blank_theme+
+  labs(fill = "Ecological Scale")+
+  scale_y_continuous(expand=c(0,0),limits=c(0,100.1))+#this forces the graph to actually start at 0% and end at 100%
+  scale_x_discrete(limits = c("plant_height_cm",
+                              # "wet_mass_g", # not really interesting on it's own
+                              "dry_mass_g", "ldmc", "leaf_area_cm2","sla_cm2_g","leaf_thickness_mm"),
+                   labels = c("plant_height_cm" = "Plant Height (cm)",
+                              # "wet_mass_g"="Wet Mass (g)", 
+                              "dry_mass_g"="Dry Mass (g)",
+                              "ldmc"="LDMC", 
+                              "leaf_area_cm2"=expression(paste("Leaf Area "(cm^2))),
+                              "sla_cm2_g"=expression("SLA "(cm^2/g)), 
+                              "leaf_thickness_mm"="Leaf Thickness (mm)")) +
+  theme(axis.text.x = element_text(angle = 300, hjust = 0)) +
+  labs(title = "OTC")
+VP_Plot2_W
+
+# Plot side by side
+(VP_C_W <- ggarrange(VP_Plot2_C
+                     , VP_Plot2_W + rremove("ylab"),
+                     ncol = 2, nrow = 1,
+          legend = "right", labels = c("A", "B"),
+          common.legend = TRUE))
+
+
+```
+
+```{r}
+# Experimental to get warming across sites - not yet finished.
+
+output2_site <- data.frame(NULL)
+for(i in unique(traits_16_log$trait)){
+  #This code all comes from Julie Messier's web site
+  mod2_site<-lmer(value~1+(1|species/siteID) + (1|warming), 
+            data=traits_16_log %>% filter(trait == i), 
+            na.action=na.omit)
+  variances2_site<-c(unlist(lapply(VarCorr(mod2_site),diag)), 
+               attr(VarCorr(mod2_site),"sc")^2) #get variances
+  
+  var.comp2_site<-variances2_site/sum(variances2_site)
+  
+  var.comp2_site<-as.data.frame(var.comp2_site) #creates a dataframe from the values
+  var.comp2_site<-cbind(rownames(var.comp2_site),data.frame(var.comp2_site,row.names=NULL)) #changes row names into a column
+  var.comp2_site<-melt(var.comp2_site,value.name="value") #makes var.comp into a variable
+  names(var.comp2_site)[1]<-"Scale" #changes the first column name to "scale"
+  
+  var.comp2_site$value<-var.comp2_site$value *100 #changes values into % 
+  
+  var.comp2_site<- var.comp2_site %>%
+    mutate(Scale = plyr::mapvalues(Scale, from = c(""), to = c("Between Individuals and Unexplained"))) %>% 
+    mutate(Scale = factor(Scale, levels = c("Between Individuals and Unexplained","siteID:species.(Intercept)","species.(Intercept)", "warming.(Intercept)"))) %>% 
+    # group_by(variable)%>%
+    arrange(variable, Scale)%>%
+    mutate(labypos=100-(cumsum(value)-0.5*value)) %>%
+    #subset(value>1) %>% #this line removes variance partitioning less than 1% so that there are no zero labels
+    mutate(trait = i)
+  
+  output2_site <- bind_rows(output2_site, var.comp2_site)
+} 
+
+
+
+
+#Colour palette for graph: https://paletton.com/#uid=54n140kjJo3hfJliyuOl7gxlT9k
+#Colour palette is in low saturation 
+#Variance Partitioning Plot 2 
+VP_legend_title <- "Ecological Scales"
+VP_Plot2_site<-ggplot(output2_site, 
+                 aes(x=trait, y=value))+
+  geom_col(aes(fill=Scale))+
+  geom_text(aes(y=labypos, label=round(value,digits = 1)),colour="white", size = 5)+
+  scale_fill_manual (VP_legend_title, values = c("#5D3640","#8A5462","#C68596","#8977AA","#4F4266"),
+                    #values = c("#77293e","#ae435f","#f27092","#543a83","#37245a"),
+                     labels = c("Between individuals + Unexplained",
+                                "Between sites within species",
+                                "Between species",
+                                "Between warming treatment"))+
+  coord_flip() +
+  ylab("Proportion of Variance (%)")+
+  xlab("Log (natural) Transformed Traits")+
+  blank_theme+
+  labs(fill = "Ecological Scale")+
+  scale_y_continuous(expand=c(0,0),limits=c(0,100.1))+#this forces the graph to actually start at 0% and end at 100%
+  scale_x_discrete(limits = c("plant_height_cm",
+                              # "wet_mass_g", # not really interesting on it's own
+                              "dry_mass_g", "ldmc", "leaf_area_cm2","sla_cm2_g","leaf_thickness_mm"),
+                   labels = c("plant_height_cm" = "Plant Height (cm)",
+                              # "wet_mass_g"="Wet Mass (g)", 
+                              "dry_mass_g"="Dry Mass (g)",
+                              "ldmc"="LDMC", 
+                              "leaf_area_cm2"=expression(paste("Leaf Area "(cm^2))),
+                              "sla_cm2_g"=expression("SLA "(cm^2/g)), 
+                              "leaf_thickness_mm"="Leaf Thickness (mm)")) +
+  theme(axis.text.x = element_text(angle = 300, hjust = 0)) 
+  # labs(title = "OTC")
+VP_Plot2_site
+
+
+
+
+```
+
