@@ -56,7 +56,7 @@ for(i in 1:100) {
   set.seed(0+i)
   print(i)
   hp <- kernel.build(comm = comm_CW, trait = trait_CW, distance = "euclidean", method.hv = "gaussian",
-                             abund = TRUE, weight = NULL, axes = 0, convert = 0)
+                             abund = FALSE, weight = NULL, axes = 0, convert = 0)
   out[[i]]  <- kernel.alpha(hp)
 }
 
@@ -174,15 +174,15 @@ histos <- ggplot(fric_all, aes(x = fric, color = warming)) +
 
 ```{r}
 rownames(C_gud) <- paste("C", rownames(C_gud), sep = "_") # ra-naming species to indicate they are from control plots
-gud_trait <- rbind(C_gud, trait_gud) # binding the different mean traits together
+gud_trait <- rbind(trait_gud, C_gud) # binding the different mean traits together
 comm_C_gud[,1:22] <- 0
 colnames(comm_C_gud) <- paste("C", colnames(comm_C_gud), sep = "_")
 gud_comm <- cbind(comm_gud, comm_C_gud)
 gud_comm <- rbind(gud_comm, c(rep(0, 22), rep(1, 22)))
-rownames(gud_comm) <- c("OTC", "Control") # total Beta diversity between Gud OTC and control is 0.238
+rownames(gud_comm) <- c("OTC", "Control") # total Beta diversity between gud OTC and control is 0.238
 
 out <- list()
-for(i in 1:3) {
+for(i in 1:100) {
   set.seed(0+i)
   print(i)
 hvlist = kernel.build(comm = gud_comm, trait = gud_trait, distance = "euclidean", method.hv = "gaussian",
@@ -191,4 +191,5 @@ beta <- kernel.beta(hvlist)
 out[[i]] <- beta$Btotal[1]
 }
 beta_gud <- out %>% as.data.frame() %>% t() %>% as.data.frame()
+sd(beta_skj$V1)
 ```
