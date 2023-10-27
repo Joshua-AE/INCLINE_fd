@@ -1,0 +1,290 @@
+---
+title: "PFTC6 INCLINE Linear Model"
+author: "Sonya R. Geange, et al. "
+output: html_notebook
+---
+
+
+```{r DataImport_InitialChecking}
+#### Load libraries----
+library(tidyverse)
+library(lme4)
+library(reshape2)
+library(cowplot) 
+library(gcookbook)
+library(readr)
+library(lmerTest)
+library(sjPlot)
+library(broom)
+library(ggeffects) 
+
+#### Load data ----
+# Change eventually to use datadownloader to call from OSF repository
+# Data imported as long format
+raw_traits <- readr::read_tsv("./Input data/PFTC6_Incline_clean_leaf_traits_2022.txt",
+                              guess_max = Inf)
+
+#### Data checks and add new site-based variables ----
+# Check class assignments
+str(raw_traits)
+# Remove NA's
+traits <- select(raw_traits, c(siteID, elevation_m_asl, blockID, warming, species, individual_nr, trait, value)) %>% na.omit() %>%
+  filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g", "dry_mass_g"))# one sample removed: DLL3549
+
+# Remove whitespace in species string
+traits$species <- gsub(" ", "_", traits$species)
+
+# Add precipitation as additional option for explaining site
+traits$precip <- as.numeric(recode(traits$siteID, 'Ulvehaugen'='1126',
+                                'Gudmedalen'='2130',
+                                'Skjelingahaugen' = '3402'))
+# Add temperature as additional option for explaining site
+traits$temp <- as.numeric(recode(traits$siteID, 'Ulvehaugen'='6.93',
+                                'Gudmedalen'='6.53',
+                                'Skjelingahaugen' = '6.53'))
+
+# Add concatenated name
+traits$uniqueID <- paste0(traits$blockID, "_", traits$warming, "_", traits$species, "_", traits$individual_nr)
+
+# Add concatenate col for siteID, warming, species
+traits$uniqueID_site <- paste0(traits$siteID, "_", traits$warming, "_", traits$species)
+
+#### Check duplicates ----
+dups <- traits %>%
+  dplyr::group_by(siteID, blockID, warming, species, individual_nr, trait) %>%
+  dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+  dplyr::filter(n > 1L)
+
+# Seems ULV6 Alchemilla sp, has two rows of seperate data.
+# Ulvehaugen Ulv_6 W Alchemilla sp 1
+# Remove for now- check in main cleaning script later on.
+traits <- subset(traits, uniqueID != "Ulv_6_W_Alchemilla_sp_1")
+
+#### Pivot wider ----
+traits_wide <- traits %>% 
+  pivot_wider(names_from = trait, values_from = value, values_fill = NA)
+
+# # Remove incomplete rows, i.e. where an individual doesn't have all traits recorded.
+traits_wide <- na.omit(traits_wide) 
+
+#### Check for balanced data ---- 
+# How many individual there are per sites/treatment etc
+individual_count <- traits_wide %>% 
+  group_by(siteID, warming, species, blockID) %>% 
+  summarize(n = n())
+
+
+# Check out how many leaves each site/ treatment has ignoring block sampling
+site_leaf_count <- traits_wide %>% 
+  group_by(uniqueID_site, siteID, warming, species) %>% 
+  summarize(n = n())
+
+#### Subset to core 16 initially -----
+# Subset to only key 16 species we collected across all the sites and treatments
+core_16_species <- c("Achillea_millefolium",
+"Agrostis_capillaris",
+"Alchemilla_alpina",
+"Anthoxanthum_odoratum",
+"Bistorta_vivipara",
+"Campanula_rotundifolia",
+"Carex_bigelowii",
+"Carex_vaginata",
+"Festuca_rubra",
+"Leontodon_autumnalis",
+"Poa_alpina",
+"Salix_herbacea",
+"Saussurea_alpina",
+"Sibbaldia_procumbens",
+"Thalictrum_alpinum",
+"Veronica_alpina")
+
+traits_wide_16 <- traits_wide %>% 
+  filter(species %in% core_16_species)
+
+# If needed back into long format ----
+traits_16 <- traits_wide_16 |> 
+  pivot_longer(names_to = "trait", values_to = "value", cols = 11:16)
+
+```
+
+
+
+```{r LinearModels}
+
+#### Check trait distributions for normality -----
+# Plotting a histogram for each trait to determine if the data is skewed
+(traits_16 %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram() +
+  facet_wrap(~trait, scales = "free") +
+  labs(title = "16 Species Trait Distribution"))
+
+#log transforming traits because of skew
+traits_16_log <- traits_16 %>% 
+  mutate(value = log(value))
+
+#plotting log transformed traits to confirm skew is gone
+(traits_16_log %>% 
+  ggplot(aes(x = value)) +
+  geom_histogram() +
+  facet_wrap(~trait, scales = "free") + 
+  labs(title = "16 Species Trait Distribution Logged"))
+
+# Set up data frame for fitting models to log-transformed data
+traits_wide_16_lm = traits_wide_16 %>% 
+  mutate(ln_height = log(plant_height_cm),
+         ln_dry_mass = log(dry_mass_g),
+         ln_area = log(leaf_area_cm2),
+         ln_sla = log(sla_cm2_g),
+         ln_ldmc = log(ldmc),
+         ln_thickness = log(leaf_thickness_mm))
+
+
+#### Run Models ----
+
+lm_SLA_ln <- lm(ln_sla ~ warming*species*precip, data = traits_wide_16_lm)
+summary(lm_SLA_ln)
+anova(lm_SLA_ln)
+glance(lm_SLA_ln)
+sjPlot::plot_model(lm_SLA_ln, type = "pred", terms = c("precip", "species", "warming"))
+
+lm_LDMC_ln <- lm(ln_ldmc ~  warming*species*precip, data = traits_wide_16_lm)
+summary(lm_LDMC_ln)
+anova(lm_LDMC_ln)
+sjPlot::plot_model(lm_LDMC_ln, type = "pred", terms = c("precip", "species", "warming"))
+
+lm_plant_height_ln <- lm(ln_height ~  warming*species*precip, data = traits_wide_16_lm)
+summary(lm_plant_height_ln)
+anova(lm_plant_height_ln)
+sjPlot::plot_model(lm_plant_height_ln, type = "pred", terms = c("precip", "species", "warming"))
+
+lm_dry_mass_ln <- lm(ln_dry_mass ~  warming*species*precip, data = traits_wide_16_lm)
+summary(lm_dry_mass_ln)
+anova(lm_dry_mass_ln)
+sjPlot::plot_model(lm_dry_mass_ln, type = "pred", terms = c("precip", "species", "warming"))
+
+lm_leaf_thickness_ln <- lm(ln_thickness ~  warming*species*precip, data = traits_wide_16_lm)
+summary(lm_leaf_thickness_ln)
+anova(lm_leaf_thickness_ln)
+sjPlot::plot_model(lm_leaf_thickness_ln, type = "pred", terms = c("precip", "species", "warming"))
+
+lm_leaf_area_ln <- lm(ln_area ~ warming*species*precip, data = traits_wide_16_lm)
+summary(lm_leaf_area_ln)
+anova(lm_leaf_area_ln)
+sjPlot::plot_model(lm_leaf_area_ln, type = "pred", terms = c("precip", "species", "warming"))
+
+# Generate data that fit the linear models from above 
+
+lm_pred = traits_wide_16_lm[,1:9] %>% 
+  mutate(ln_dry_mass = predict(lm_dry_mass_ln, re.form=NA, newdata=.),
+         ln_area = predict(lm_leaf_area_ln, re.form=NA, newdata=.),
+         ln_sla = predict(lm_SLA_ln, re.form=NA, newdata=.),
+         ln_ldmc = predict(lm_LDMC_ln, re.form=NA, newdata=.),
+         ln_thickness = predict(lm_leaf_thickness_ln, re.form=NA, newdata=.),
+         ln_height = predict(lm_plant_height_ln, re.form=NA, newdata=.))
+
+
+
+# Alternative Approach for plotting the raw data and the predictions from the linear models
+(p_height <- ggplot(data = lm_pred, aes(x = warming, y = ln_height)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    geom_boxplot(aes(alpha = 0.1)) +
+    facet_grid(~precip) +
+    ylab("ln Plant Height")+ 
+    xlab(NULL) +
+    theme_bw())
+
+(p_sla <- ggplot(data = lm_pred, aes(x = warming, y = ln_sla)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    geom_boxplot(aes(alpha = 0.1)) +
+    facet_grid(~precip) +
+    ylab("ln SLA")+ 
+    xlab(NULL) +
+    theme_bw())
+
+(p_ldmc <- ggplot(data = lm_pred, aes(x = warming, y = ln_ldmc)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    geom_boxplot(aes(alpha = 0.1)) +
+    facet_grid(~precip) +
+    ylab("ln LDMC")+ 
+    xlab(NULL) +
+    theme_bw())
+
+(p_leafthickness <- ggplot(data = lm_pred, aes(x = warming, y = ln_thickness)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    geom_boxplot(aes(alpha = 0.1)) +
+    facet_grid(~precip) +
+    ylab("ln Leaf Thickness")+ 
+    xlab(NULL) +
+    theme_bw())
+
+(p_drymass <- ggplot(data = lm_pred, aes(x = warming, y = ln_dry_mass)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    geom_boxplot(aes(alpha = 0.1)) +
+    facet_grid(~precip) +
+    ylab("ln Leaf Thickness")+ 
+    xlab(NULL) +
+    theme_bw())
+
+(p_leafarea <- ggplot(data = lm_pred, aes(x = warming, y = ln_area)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    geom_boxplot(aes(alpha = 0.1)) +
+    facet_grid(~precip) +
+    ylab("ln Leaf Area")+ 
+    xlab(NULL) +
+    theme_bw())
+
+
+(p_sla <- ggplot(data = lm_pred, aes(x = warming, y = ln_sla, colour = species)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species)) +
+    facet_grid(~siteID) +
+    ylab("ln SLA")+ 
+    xlab(NULL) +
+    theme_bw())
+
+(p_area <- ggplot(data = lm_pred, aes(x = warming, y = ln_area, colour = species)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species)) +
+    facet_grid(~siteID) +
+    ylab("ln Leaf Area")+ 
+    xlab(NULL) +
+    theme_bw())
+
+
+
+# Assemble combined plot of all plant functional traits by prediction and raw data
+# Can choose to save, or just run plot intially wihtout 'png' call.
+# For figure production, save as pdf so edits can be done in illustator.
+
+png("PFTC6_INCLINE_lm_Plot1.png", width = 28,height = 21, units = "cm", res=800)
+
+(ggarrange(p_drymass, p_ldmc,p_leafarea, p_sla, p_leafthickness,p_height,
+          nrow =2, ncol = 3, heights = c(1,1), labels="AUTO", align = "hv",
+          common.legend = TRUE, legend="bottom"))
+dev.off()
+
+
+# Example of alternative plotting approach with precip along x axis.
+# Still very much a work in progress.
+(p_drymass2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_dry_mass, color = species)) +
+    geom_line() + 
+    geom_jitter(data = traits_wide_16_lm, 
+                aes(x = precip, y = ln_dry_mass), 
+                width = 10,
+                height=0,
+                size = 0.1,
+                alpha = 0.3) +
+    ylab("ln Dry Mass")+
+    xlab(NULL)+
+    scale_x_continuous(breaks= c(1126,2130,3402)))
+
+
+```
+
