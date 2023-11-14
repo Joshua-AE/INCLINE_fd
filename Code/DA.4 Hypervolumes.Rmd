@@ -48,6 +48,8 @@ for(i in 1:100) {
   out[[i]]  <- kernel.alpha(hp)
 }
 
+# The hypervolumes can be constructed with the given data or data can be transformed using PCoA after traits are dummyfied (if needed) and standardized (always). Beware that if transformations are required, all communities to be compared should be built simultaneously to guarantee comparability. In such case, one might want to first run hyper.build and use the resulting data in different runs of kernel.build. See function hyper.build for more details.
+
 fric_CW <- as.data.frame(out)
 colnames(fric_CW) <- c(1:100)
 fric_CW <- fric_CW %>% t() %>% as.data.frame() %>% rename(fric_CW = Richness)
