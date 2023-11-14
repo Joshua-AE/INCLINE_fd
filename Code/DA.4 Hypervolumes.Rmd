@@ -23,67 +23,78 @@ traits <- select(raw_traits, c(ID, siteID, blockID, warming, species, trait, val
 # colnames in comm and rownames in trait have to match!
 ```
 
-# Hypervolume based on treatment throughout sites (Level 1)
+# Hypervolume based on treatment throughout sites (Level 1, scale first)
 ```{r, print = FALSE}
 # This step calculates the mean value for each species, trait and treatment. It also removes 10 species that only occur in C or W.
 trait_i <- traits %>% group_by(warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>%
           pivot_wider(names_from = trait, values_from = mean_value)
-trait_i <- trait_i %>%  ungroup() %>% left_join(as.data.frame(table(trait_i$species)), by = c("species" = "Var1")) %>% filter(Freq == 2)
-trait_C <- trait_i %>% filter(warming == "C") %>% select(-c(warming, Freq)) %>% column_to_rownames(var = "species")
-trait_W <- trait_i %>% filter(warming == "W") %>% select(-c(warming, Freq)) %>% column_to_rownames(var = "species")
+trait_i <- trait_i %>% ungroup() %>% left_join(as.data.frame(table(trait_i$species)), by = c("species" = "Var1")) %>%
+  filter(Freq == 2)
 trait_CW <- traits %>% group_by(species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>%
-          pivot_wider(names_from = trait, values_from = mean_value)
-trait_CW <- trait_CW %>% filter(species %in% row.names(trait_C)) %>% column_to_rownames(var = "species")
+          pivot_wider(names_from = trait, values_from = mean_value) # mean value per species irrespective of treatment
+trait_CW <- trait_CW %>% mutate(warming = "CW") %>% semi_join(trait_i, by = "species") %>% ungroup()
+trait_i <- trait_i %>% select(-c("Freq")) %>% rbind(trait_CW) %>% mutate(speciesID = paste(species, warming, sep = " "))
+trait_i[,c(3:7)] <- scale(trait_i[,c(3:7)], center = T, scale = T) # scaling all mean values together
 
 #This step creates the community matrix based on the trait tables. It does not matter for functional richness (Fric) computation if each species has abundance of 1 or 1/35 or 1/38 etc.
-comm <- trait_C %>% mutate(all_sites = 1) %>% select(c(all_sites)) %>% t()
+comm_all <- trait_i %>% select(c(warming, speciesID)) %>% dummy_cols(select_columns = "warming", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
+
+trait_i <- trait_i %>% select(-c(warming, species)) %>% column_to_rownames(var = "speciesID")
 
 # The for() loop calculates Fric for each treatment group (control, OTC, both) 100 times
 out <- list()
 for(i in 1:100) {
   set.seed(0+i)
   print(i)
-  hp <- kernel.build(comm = comm, trait = scale(trait_CW), distance = "euclidean", method.hv = "gaussian",
+  hp <- kernel.build(comm = comm_all, trait = trait_i, distance = "euclidean", method.hv = "gaussian",
                              abund = FALSE, weight = NULL, axes = 0, convert = 0)
   out[[i]]  <- kernel.alpha(hp)
 }
 
-# The hypervolumes can be constructed with the given data or data can be transformed using PCoA after traits are dummyfied (if needed) and standardized (always). Beware that if transformations are required, all communities to be compared should be built simultaneously to guarantee comparability. In such case, one might want to first run hyper.build and use the resulting data in different runs of kernel.build. See function hyper.build for more details.
-
 fric_CW <- as.data.frame(out)
 colnames(fric_CW) <- c(1:100)
-fric_CW <- fric_CW %>% t() %>% as.data.frame() %>% rename(fric_CW = Richness)
+fric_CW <- fric_CW %>% t() %>% as.data.frame() %>% rename(Control = warming_C, OTC = warming_W, `all samples` = warming_CW)
+fric_CW <- pivot_longer(fric_CW, cols = 1:3, names_to = "warming", values_to = "fric")
 
-fric_all <- cbind(fric_C, fric_CW, fric_W)
-fric_all <- pivot_longer(fric_all, cols = 1:3, names_to = "warming", values_to = "fric")
-
-distr <- ggplot(fric_all, aes(x = fric, color = warming)) + 
-  geom_density(data = subset(fric_all, warming == 'fric_C'),fill = "red", alpha = 0.2) +
-  geom_density(data = subset(fric_all, warming == 'fric_W'),fill = "blue", alpha = 0.2) +
-  geom_density(data = subset(fric_all, warming == 'fric_CW'),fill = "green", alpha = 0.2) +
-  theme_classic() + scale_colour_manual(name  = "", breaks=c("fric_C", "fric_W", "fric_CW"), labels = c("C", "OTC", "Both"), values=c("red", "blue", "green")) +
-  guides(color = guide_legend(override.aes = list(fill = c("red", "blue", "green")))) + theme(legend.position = c(0.9, 0.9))
+distr <- ggplot(fric_CW, aes(x = fric, color = warming)) + 
+  geom_density(data = subset(fric_CW, warming == 'OTC'),fill = "red", alpha = 0.2) +
+  geom_density(data = subset(fric_CW, warming == 'Control'),fill = "blue", alpha = 0.2) +
+  geom_density(data = subset(fric_CW, warming == 'all samples'),fill = "green", alpha = 0.2) +
+  theme_classic() + scale_colour_manual(name  = "", breaks=c("OTC", "Control", "all samples"), labels = c("OTC", "Control", "all samples"), values=c("red", "blue", "green")) +
+  guides(color = guide_legend(override.aes = list(fill = c("red", "blue", "green")))) + theme(legend.position = c(0.6, 0.9)) +
+  labs(title = NULL, x ='Functional richness', y ='density')
 # print 400 x 300
 ```
 
 # Site-specific hypervolumes (Level 2)
 ```{r, print = FALSE}
-trait_all <- traits %>% group_by(siteID, warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>%
-             pivot_wider(names_from = trait, values_from = mean_value)
-trait_all <- trait_all %>% mutate(uniqueID = paste(siteID, species, sep = " "))
-trait_all <- trait_all %>% left_join(as.data.frame(table(trait_all$uniqueID)), by = c("uniqueID" = "Var1")) %>% filter(Freq == 2)
-trait_all <- trait_all %>% group_by(siteID, warming) %>% mutate(LDMC = scale(ldmc), SLA = scale(sla_cm2_g),
-             LA = scale(leaf_area_cm2), LTH = scale(leaf_thickness_mm), HEIGHT = scale(plant_height_cm))
-trait_all <- trait_all %>% ungroup() %>% mutate(speciesID = paste(species, substr(siteID, 1,3), warming, sep = "_")) 
+trait_gud <- traits %>% filter(siteID == "Gudmedalen") %>% group_by(warming, species, trait) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value)
+trait_gud <- trait_gud %>% ungroup() %>% left_join(as.data.frame(table(trait_gud$species)), by = c("species" = "Var1")) %>%
+  filter(Freq == 2) %>% mutate(speciesID = paste(species, "Gud", warming, sep = " "), siteID = paste("Gud", warming, sep = " "))
+trait_gud[,c(3:7)] <- scale(trait_gud[,c(3:7)], center = T, scale = T)
 
-comm_all <- trait_all %>% mutate(site_CW = paste(substr(siteID, 1,3), warming)) %>% select(c(site_CW, speciesID)) %>% dummy_cols(select_columns = "site_CW", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
+trait_ulv <- traits %>% filter(siteID == "Ulvehaugen") %>% group_by(warming, species, trait) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value)
+trait_ulv <- trait_ulv %>% ungroup() %>% left_join(as.data.frame(table(trait_ulv$species)), by = c("species" = "Var1")) %>%
+  filter(Freq == 2) %>% mutate(speciesID = paste(species, "Ulv", warming, sep = " "), siteID = paste("Ulv", warming, sep = " "))
+trait_ulv[,c(3:7)] <- scale(trait_ulv[,c(3:7)], center = T, scale = T)
+
+trait_skj <- traits %>% filter(siteID == "Skjelingahaugen") %>% group_by(warming, species, trait) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value)
+trait_skj <- trait_skj %>% ungroup() %>% left_join(as.data.frame(table(trait_skj$species)), by = c("species" = "Var1")) %>%
+  filter(Freq == 2) %>% mutate(speciesID = paste(species, "Skj", warming, sep = " "), siteID = paste("Skj", warming, sep = " "))
+trait_skj[,c(3:7)] <- scale(trait_skj[,c(3:7)], center = T, scale = T)
+
+trait_all <- rbind(trait_gud, trait_ulv, trait_skj)
+
+comm_all <- trait_all %>% select(c(siteID, speciesID)) %>% dummy_cols(select_columns = "siteID", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
 rownames(comm_all) <- c("Gud C", "Gud W", "Skj C", "Skj W", "Ulv C", "Ulv W")
 
-trait_all <- trait_all %>% select(c(LDMC, SLA, LA, LTH, HEIGHT, speciesID)) %>% column_to_rownames(var = "speciesID")
-trait_all[,1:5] <- unlist(trait_all[,1:5])
+trait_all <- trait_all %>% select(-c(warming, Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
 
 out <- list()
-for(i in 1:10) {
+for(i in 1:100) {
   set.seed(0+i)
   print(i)
   hp <- kernel.build(comm = comm_all, trait = trait_all, distance = "euclidean", method.hv = "gaussian",
