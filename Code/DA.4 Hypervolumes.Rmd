@@ -23,7 +23,7 @@ traits <- select(raw_traits, c(ID, siteID, blockID, warming, species, trait, val
 # colnames in comm and rownames in trait have to match!
 ```
 
-# Hypervolume of all species in the control plots [mean values]
+# Hypervolume based on treatment throughout sites (Level 1)
 ```{r, print = FALSE}
 # This step calculates the mean value for each species, trait and treatment. It also removes 10 species that only occur in C or W.
 trait_i <- traits %>% group_by(warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>%
@@ -66,7 +66,7 @@ distr <- ggplot(fric_all, aes(x = fric, color = warming)) +
 # print 400 x 300
 ```
 
-# site-specific hypervolumes
+# Site-specific hypervolumes (Level 2)
 ```{r, print = FALSE}
 trait_all <- traits %>% group_by(siteID, warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>%
              pivot_wider(names_from = trait, values_from = mean_value)
@@ -102,6 +102,10 @@ distr_sites <- ggplot(fric_all, aes(x = fric, color = warming)) +
   guides(color = guide_legend(override.aes = list(fill = c("red", "blue")))) + theme(legend.position = c(0.2, 0.9))
 
 ```
+# Treatment-specific hypervolumes (Level 3)
+```{r}
+
+```
 
 # Functional divergence
 ```{r, print = FALSE}
@@ -128,7 +132,7 @@ sd(beta_skj$V1)
 
 
 
-# Hypervolume of all samples in the control plots
+# Hypervolume of all samples in the control plots **DEPRECATED**
 ```{r, print = FALSE}
 # some species are over-represented
 # how strongly are traits correlated? Do PCA if too correlated!
