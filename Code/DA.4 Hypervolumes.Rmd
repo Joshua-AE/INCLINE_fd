@@ -10,6 +10,11 @@ library("tidyverse")
 library("BAT") # computes functional metrics based on Mammola and Cardoso (2020)
 library("hypervolume") # computes hypervolumes based on XY
 library("fastDummies") # create dummy columns for cetegorical traits
+
+#packages for parallel computation
+library("foreach")
+library("future")
+library("doFuture")
 ```
 
 # Re-arranging data frame
@@ -17,7 +22,7 @@ library("fastDummies") # create dummy columns for cetegorical traits
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
 traits <- select(raw_traits, c(ID, siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
   filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g"))# one sample removed: DLL3549
-
+rm(raw_traits)
 # all rows in the comm matrix have to sum to 1. rownames = sampling units, colnames = species
 # traits in the traits table should be scaled, centered and not highly correlated. rownames = species, colnames = traits.
 # colnames in comm and rownames in trait have to match!
@@ -66,7 +71,7 @@ distr <- ggplot(fric_CW, aes(x = fric, color = warming)) +
 # print 400 x 300
 ```
 
-# Site-specific hypervolumes (Level 2)
+# Site-specific hypervolumes -> effect of warming (Level 2)
 ```{r, print = FALSE}
 trait_gud <- traits %>% filter(siteID == "Gudmedalen") %>% group_by(warming, species, trait) %>%
   summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value)
@@ -92,29 +97,70 @@ comm_all <- trait_all %>% select(c(siteID, speciesID)) %>% dummy_cols(select_col
 rownames(comm_all) <- c("Gud C", "Gud W", "Skj C", "Skj W", "Ulv C", "Ulv W")
 
 trait_all <- trait_all %>% select(-c(warming, Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
+rm(trait_gud, trait_skj, trait_ulv)
 
-out <- list()
-for(i in 1:100) {
-  set.seed(0+i)
-  print(i)
-  hp <- kernel.build(comm = comm_all, trait = trait_all, distance = "euclidean", method.hv = "gaussian",
-                             abund = FALSE, weight = NULL, axes = 0, convert = 0)
-  out[[i]]  <- kernel.alpha(hp)
+plan(multisession)
+ptm <- proc.time()
+fric_all <- foreach(i = 1:100, .combine = rbind, .options.future = list(seed = TRUE)) %dofuture% {
+set.seed(0+i)
+kernel.alpha(kernel.build(comm = comm_all, trait = trait_all, distance = "euclidean", method.hv = "gaussian",
+                             abund = FALSE, weight = NULL, axes = 0, convert = 0))
 }
+proc.time() - ptm
 
-fric_sites <- as.data.frame(out)
-colnames(fric_sites) <- c(1:10)
-fric_sites <- fric_sites %>% t() %>% as.data.frame()
-
-distr_sites <- ggplot(fric_all, aes(x = fric, color = warming)) + 
-  geom_density(data = subset(fric_all, warming == 'fric_ulv'),fill = "red", alpha = 0.2) +
-  geom_density(data = subset(fric_all, warming == 'fric_C_ulv'),fill = "blue", alpha = 0.2) +
-  theme_classic() + scale_colour_manual(name  = "", breaks=c("fric_ulv", "fric_C_ulv"), labels = c("OTC", "Control"), values=c("red", "blue")) +
-  guides(color = guide_legend(override.aes = list(fill = c("red", "blue")))) + theme(legend.position = c(0.2, 0.9))
-
+fric_all <- as.data.frame(fric_all)
 ```
-# Treatment-specific hypervolumes (Level 3)
+
+# Treatment-specific hypervolumes -> differences between sites (Level 3)
 ```{r}
+trait_OTC <- traits %>% filter(warming == "W") %>% group_by(siteID, species, trait) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value)
+trait_OTC <- trait_OTC %>% ungroup() %>% left_join(as.data.frame(table(trait_OTC$species)), by = c("species" = "Var1")) %>%
+  filter(Freq == 3) %>% mutate(speciesID = paste(species, "OTC", substr(siteID, 1, 3), sep = " "),
+                               siteID = paste(substr(siteID, 1, 3), "OTC", sep = " "))
+trait_OTC[,c(3:7)] <- scale(trait_OTC[,c(3:7)], center = T, scale = T)
+
+trait_C <- traits %>% filter(warming == "C") %>% group_by(siteID, species, trait) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value)
+trait_C <- trait_C %>% ungroup() %>% left_join(as.data.frame(table(trait_C$species)), by = c("species" = "Var1")) %>%
+  filter(Freq == 3) %>% mutate(speciesID = paste(species, "C", substr(siteID, 1, 3), sep = " "),
+                               siteID = paste(substr(siteID, 1, 3), "C", sep = " "))
+trait_C[,c(3:7)] <- scale(trait_C[,c(3:7)], center = T, scale = T)
+
+trait_all <- rbind(trait_OTC, trait_C)
+
+comm_all <- trait_all %>% select(c(siteID, speciesID)) %>% dummy_cols(select_columns = "siteID", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
+rownames(comm_all) <- c("Gud C", "Gud W", "Skj C", "Skj W", "Ulv C", "Ulv W")
+
+trait_all <- trait_all %>% select(-c(Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
+rm(trait_gud, trait_skj, trait_ulv)
+
+plan(multisession)
+ptm <- proc.time()
+fric_all_2 <- foreach(i = 1:100, .combine = rbind, .options.future = list(seed = TRUE)) %dofuture% {
+set.seed(0+i)
+kernel.alpha(kernel.build(comm = comm_all, trait = trait_all, distance = "euclidean", method.hv = "gaussian",
+                             abund = FALSE, weight = NULL, axes = 0, convert = 0))
+}
+proc.time() - ptm
+
+fric_all <- as.data.frame(fric_all)
+```
+
+# Plotting Level 3
+```{r}
+fric_C <- fric_all1 %>% select(`Gud C`, `Skj C`, `Ulv C`)
+fric_C <- pivot_longer(fric_C, cols = 1:3, names_to = "site", values_to = "fric")
+fric_W <- fric_all1 %>% select(`Gud W`, `Skj W`, `Ulv W`)
+fric_W <- pivot_longer(fric_W, cols = 1:3, names_to = "site", values_to = "fric")
+
+distr <- ggplot(fric_W, aes(x = fric, color = site)) + 
+  geom_density(data = subset(fric_W, site == 'Skj W'),fill = "darkblue", alpha = 0.2) +
+  geom_density(data = subset(fric_W, site == 'Gud W'),fill = "blue", alpha = 0.2) +
+  geom_density(data = subset(fric_W, site == 'Ulv W'),fill = "lightblue", alpha = 0.2) +
+  theme_classic() + scale_colour_manual(name  = "", breaks=c("Skj W", "Gud W", "Ulv W"), labels = c("Skjelingahaugen", "Gudmedalen", "Ulvehaugen"), values=c("darkblue", "blue", "lightblue")) +
+  guides(color = guide_legend(override.aes = list(fill = c("darkblue", "blue", "lightblue")))) + theme(legend.position = c(0.8, 0.9)) + labs(title = NULL, x ='Functional richness (OTC)', y ='density')
+# print 400 x 300
 
 ```
 
@@ -140,8 +186,6 @@ out[[i]] <- beta$Btotal[1]
 beta_gud <- out %>% as.data.frame() %>% t() %>% as.data.frame()
 sd(beta_skj$V1)
 ```
-
-
 
 # Hypervolume of all samples in the control plots **DEPRECATED**
 ```{r, print = FALSE}
