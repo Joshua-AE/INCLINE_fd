@@ -39,19 +39,21 @@ trait_CW <- traits %>% group_by(species, trait) %>% summarise(mean_value = mean(
           pivot_wider(names_from = trait, values_from = mean_value) # mean value per species irrespective of treatment
 trait_CW <- trait_CW %>% mutate(warming = "CW") %>% semi_join(trait_i, by = "species") %>% ungroup()
 trait_i <- trait_i %>% select(-c("Freq")) %>% rbind(trait_CW) %>% mutate(speciesID = paste(species, warming, sep = " "))
-trait_i[,c(3:7)] <- scale(trait_i[,c(3:7)], center = T, scale = T) # scaling all mean values together
+trait_i[,c(3:7)] <- scale(trait_i[,c(3:7)], center = T, scale = T) # scaling all mean values together. 
 
 #This step creates the community matrix based on the trait tables. It does not matter for functional richness (Fric) computation if each species has abundance of 1 or 1/35 or 1/38 etc.
 comm_all <- trait_i %>% select(c(warming, speciesID)) %>% dummy_cols(select_columns = "warming", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
 
 trait_i <- trait_i %>% select(-c(warming, species)) %>% column_to_rownames(var = "speciesID")
+trait_pca <- prcomp(x = trait_i, center = FALSE, scale. = FALSE) # center and scale already done in lines above
+trait_pca <- trait_pca$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 85.5 % of overall variation
 
 # The for() loop calculates Fric for each treatment group (control, OTC, both) 100 times
 out <- list()
 for(i in 1:100) {
   set.seed(0+i)
   print(i)
-  hp <- kernel.build(comm = comm_all, trait = trait_i, distance = "euclidean", method.hv = "gaussian",
+  hp <- kernel.build(comm = comm_all, trait = trait_pca, distance = "euclidean", method.hv = "gaussian",
                              abund = FALSE, weight = NULL, axes = 0, convert = 0)
   out[[i]]  <- kernel.alpha(hp)
 }
@@ -99,16 +101,30 @@ rownames(comm_all) <- c("Gud C", "Gud W", "Skj C", "Skj W", "Ulv C", "Ulv W")
 trait_all <- trait_all %>% select(-c(warming, Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
 rm(trait_gud, trait_skj, trait_ulv)
 
+trait_pca <- prcomp(x = trait_all, center = FALSE, scale. = FALSE) # center and scale already done in lines above
+trait_pca <- trait_pca$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 83.7 % of overall variation
+
 plan(multisession)
 ptm <- proc.time()
 fric_all <- foreach(i = 1:100, .combine = rbind, .options.future = list(seed = TRUE)) %dofuture% {
 set.seed(0+i)
-kernel.alpha(kernel.build(comm = comm_all, trait = trait_all, distance = "euclidean", method.hv = "gaussian",
+kernel.alpha(kernel.build(comm = comm_all, trait = trait_pca, distance = "euclidean", method.hv = "gaussian",
                              abund = FALSE, weight = NULL, axes = 0, convert = 0))
 }
 proc.time() - ptm
 
 fric_all <- as.data.frame(fric_all)
+#_______________________________________________________________________________ beta-diversity
+out <- list() # DOESNT WORK YET> I PROBABLY HAVE TO SUPPLY EACH SITE ONE AFTER THE OTHER AN NOT ALL AT ONCE
+for(i in 1:10) {
+  set.seed(0+i)
+  print(i)
+hvlist = kernel.build(comm = comm_all, trait = trait_pca, distance = "euclidean", method.hv = "gaussian",
+                             abund = FALSE, weight = NULL, axes = 0, convert = 0)
+beta <- kernel.beta(hvlist)
+out[[i]] <- beta$Btotal[1]
+}
+beta_gud <- out %>% as.data.frame() %>% t() %>% as.data.frame()
 ```
 
 # Treatment-specific hypervolumes -> differences between sites (Level 3)
@@ -135,11 +151,14 @@ rownames(comm_all) <- c("Gud C", "Gud W", "Skj C", "Skj W", "Ulv C", "Ulv W")
 trait_all <- trait_all %>% select(-c(Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
 rm(trait_gud, trait_skj, trait_ulv)
 
+trait_pca <- prcomp(x = trait_all, center = FALSE, scale. = FALSE) # center and scale already done in lines above
+trait_pca <- trait_pca$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 83.7 % of overall variation
+
 plan(multisession)
 ptm <- proc.time()
-fric_all_2 <- foreach(i = 1:100, .combine = rbind, .options.future = list(seed = TRUE)) %dofuture% {
+fric_all <- foreach(i = 1:100, .combine = rbind, .options.future = list(seed = TRUE)) %dofuture% {
 set.seed(0+i)
-kernel.alpha(kernel.build(comm = comm_all, trait = trait_all, distance = "euclidean", method.hv = "gaussian",
+kernel.alpha(kernel.build(comm = comm_all, trait = trait_pca, distance = "euclidean", method.hv = "gaussian",
                              abund = FALSE, weight = NULL, axes = 0, convert = 0))
 }
 proc.time() - ptm
