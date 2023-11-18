@@ -95,12 +95,45 @@ trait_skj[,c(3:7)] <- scale(trait_skj[,c(3:7)], center = T, scale = T)
 
 trait_all <- rbind(trait_gud, trait_ulv, trait_skj)
 
+#_______________________________________________________________________________ beta-diversity
+
+comm_gud <- trait_gud %>% select(c(siteID, speciesID)) %>% dummy_cols(select_columns = "siteID", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
+trait_gud <- trait_gud %>% select(-c(warming, Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
+trait_gud <- prcomp(x = trait_gud, center = FALSE, scale. = FALSE) # center and scale already done in lines above
+trait_gud <- trait_gud$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 83.7 % of overall variation
+
+comm_ulv <- trait_ulv %>% select(c(siteID, speciesID)) %>% dummy_cols(select_columns = "siteID", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
+trait_ulv <- trait_ulv %>% select(-c(warming, Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
+trait_ulv <- prcomp(x = trait_ulv, center = FALSE, scale. = FALSE) # center and scale already done in lines above
+trait_ulv <- trait_ulv$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 83.7 % of overall variation
+
+comm_skj <- trait_skj %>% select(c(siteID, speciesID)) %>% dummy_cols(select_columns = "siteID", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
+trait_skj <- trait_skj %>% select(-c(warming, Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
+trait_skj <- prcomp(x = trait_skj, center = FALSE, scale. = FALSE) # center and scale already done in lines above
+trait_skj <- trait_skj$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 83.7 % of overall variation
+
+out <- list()
+for(i in 1:100) {
+  set.seed(0+i)
+  print(i)
+hvlist = kernel.build(comm = comm_skj, trait = trait_skj, distance = "euclidean", method.hv = "gaussian",
+                             abund = FALSE, weight = NULL, axes = 0, convert = 0)
+beta <- kernel.beta(hvlist)
+out[[i]] <- paste(beta$Btotal[1], beta$Brepl[1], beta$Brich[1], sep = ";")
+}
+beta_div <- out %>% as.data.frame() %>% t() %>% as.data.frame()
+beta_div <- beta_div %>% separate(col = V1, into = c('Btotal', 'Brepl', 'Brich'), sep = ";", remove = T) %>%
+  mutate(Btotal = as.numeric(Btotal), Brepl = as.numeric(Brepl), Brich = as.numeric(Brich))
+colMeans(beta_div)
+# Gud = 0.27567, Ulv = 0.26041, Skj = 0.27812
+# beta-diversity with 5 dimensions: Gud = 0.37758, Ulv = 0.51155, Skj = 0.36701
+#_______________________________________________________________________________ alpha-diversity
+
+rm(trait_gud, trait_skj, trait_ulv, comm_gud, comm_ulv, comm_skj, out, beta_div, hvlist, i, beta)
 comm_all <- trait_all %>% select(c(siteID, speciesID)) %>% dummy_cols(select_columns = "siteID", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
 rownames(comm_all) <- c("Gud C", "Gud W", "Skj C", "Skj W", "Ulv C", "Ulv W")
 
 trait_all <- trait_all %>% select(-c(warming, Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
-rm(trait_gud, trait_skj, trait_ulv)
-
 trait_pca <- prcomp(x = trait_all, center = FALSE, scale. = FALSE) # center and scale already done in lines above
 trait_pca <- trait_pca$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 83.7 % of overall variation
 
@@ -114,17 +147,6 @@ kernel.alpha(kernel.build(comm = comm_all, trait = trait_pca, distance = "euclid
 proc.time() - ptm
 
 fric_all <- as.data.frame(fric_all)
-#_______________________________________________________________________________ beta-diversity
-out <- list() # DOESNT WORK YET> I PROBABLY HAVE TO SUPPLY EACH SITE ONE AFTER THE OTHER AN NOT ALL AT ONCE
-for(i in 1:10) {
-  set.seed(0+i)
-  print(i)
-hvlist = kernel.build(comm = comm_all, trait = trait_pca, distance = "euclidean", method.hv = "gaussian",
-                             abund = FALSE, weight = NULL, axes = 0, convert = 0)
-beta <- kernel.beta(hvlist)
-out[[i]] <- beta$Btotal[1]
-}
-beta_gud <- out %>% as.data.frame() %>% t() %>% as.data.frame()
 ```
 
 # Treatment-specific hypervolumes -> differences between sites (Level 3)
@@ -181,29 +203,6 @@ distr <- ggplot(fric_W, aes(x = fric, color = site)) +
   guides(color = guide_legend(override.aes = list(fill = c("darkblue", "blue", "lightblue")))) + theme(legend.position = c(0.8, 0.9)) + labs(title = NULL, x ='Functional richness (OTC)', y ='density')
 # print 400 x 300
 
-```
-
-# Functional divergence
-```{r, print = FALSE}
-rownames(C_gud) <- paste("C", rownames(C_gud), sep = "_") # renaming species to indicate they are from control plots
-gud_trait <- rbind(trait_gud, C_gud) # binding the different mean traits together
-comm_C_gud[,1:22] <- 0
-colnames(comm_C_gud) <- paste("C", colnames(comm_C_gud), sep = "_")
-gud_comm <- cbind(comm_gud, comm_C_gud)
-gud_comm <- rbind(gud_comm, c(rep(0, 22), rep(1, 22)))
-rownames(gud_comm) <- c("OTC", "Control") # total Beta diversity between gud OTC and control is 0.238
-
-out <- list()
-for(i in 1:100) {
-  set.seed(0+i)
-  print(i)
-hvlist = kernel.build(comm = gud_comm, trait = gud_trait, distance = "euclidean", method.hv = "gaussian",
-                             abund = FALSE, weight = NULL, axes = 0, convert = 0)
-beta <- kernel.beta(hvlist)
-out[[i]] <- beta$Btotal[1]
-}
-beta_gud <- out %>% as.data.frame() %>% t() %>% as.data.frame()
-sd(beta_skj$V1)
 ```
 
 # Hypervolume of all samples in the control plots **DEPRECATED**
