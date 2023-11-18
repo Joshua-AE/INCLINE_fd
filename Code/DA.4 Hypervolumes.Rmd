@@ -93,7 +93,7 @@ trait_skj <- trait_skj %>% ungroup() %>% left_join(as.data.frame(table(trait_skj
   filter(Freq == 2) %>% mutate(speciesID = paste(species, "Skj", warming, sep = " "), siteID = paste("Skj", warming, sep = " "))
 trait_skj[,c(3:7)] <- scale(trait_skj[,c(3:7)], center = T, scale = T)
 
-trait_all <- rbind(trait_gud, trait_ulv, trait_skj)
+comm_all <- rbind(trait_gud, trait_ulv, trait_skj)
 
 #_______________________________________________________________________________ beta-diversity
 
@@ -116,7 +116,7 @@ out <- list()
 for(i in 1:100) {
   set.seed(0+i)
   print(i)
-hvlist = kernel.build(comm = comm_skj, trait = trait_skj, distance = "euclidean", method.hv = "gaussian",
+hvlist = kernel.build(comm = comm_gud, trait = trait_gud, distance = "euclidean", method.hv = "gaussian",
                              abund = FALSE, weight = NULL, axes = 0, convert = 0)
 beta <- kernel.beta(hvlist)
 out[[i]] <- paste(beta$Btotal[1], beta$Brepl[1], beta$Brich[1], sep = ";")
@@ -129,24 +129,22 @@ colMeans(beta_div)
 # beta-diversity with 5 dimensions: Gud = 0.37758, Ulv = 0.51155, Skj = 0.36701
 #_______________________________________________________________________________ alpha-diversity
 
+trait_all <- rbind(trait_gud, trait_ulv, trait_skj)
 rm(trait_gud, trait_skj, trait_ulv, comm_gud, comm_ulv, comm_skj, out, beta_div, hvlist, i, beta)
-comm_all <- trait_all %>% select(c(siteID, speciesID)) %>% dummy_cols(select_columns = "siteID", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
+comm_all <- comm_all %>% select(c(siteID, speciesID)) %>% dummy_cols(select_columns = "siteID", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
 rownames(comm_all) <- c("Gud C", "Gud W", "Skj C", "Skj W", "Ulv C", "Ulv W")
-
-trait_all <- trait_all %>% select(-c(warming, Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
-trait_pca <- prcomp(x = trait_all, center = FALSE, scale. = FALSE) # center and scale already done in lines above
-trait_pca <- trait_pca$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 83.7 % of overall variation
 
 plan(multisession)
 ptm <- proc.time()
 fric_all <- foreach(i = 1:100, .combine = rbind, .options.future = list(seed = TRUE)) %dofuture% {
 set.seed(0+i)
-kernel.alpha(kernel.build(comm = comm_all, trait = trait_pca, distance = "euclidean", method.hv = "gaussian",
+kernel.alpha(kernel.build(comm = comm_all, trait = trait_all, distance = "euclidean", method.hv = "gaussian",
                              abund = FALSE, weight = NULL, axes = 0, convert = 0))
 }
 proc.time() - ptm
 
 fric_all <- as.data.frame(fric_all)
+colMeans(fric_all)
 ```
 
 # Treatment-specific hypervolumes -> differences between sites (Level 3)
