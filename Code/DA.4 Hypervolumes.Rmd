@@ -163,27 +163,32 @@ trait_C <- trait_C %>% ungroup() %>% left_join(as.data.frame(table(trait_C$speci
                                siteID = paste(substr(siteID, 1, 3), "C", sep = " "))
 trait_C[,c(3:7)] <- scale(trait_C[,c(3:7)], center = T, scale = T)
 
-trait_all <- rbind(trait_OTC, trait_C)
-
-comm_all <- trait_all %>% select(c(siteID, speciesID)) %>% dummy_cols(select_columns = "siteID", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
+comm_all <- rbind(trait_OTC, trait_C)
+comm_all <- comm_all %>% select(c(siteID, speciesID)) %>% dummy_cols(select_columns = "siteID", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
 rownames(comm_all) <- c("Gud C", "Gud W", "Skj C", "Skj W", "Ulv C", "Ulv W")
 
-trait_all <- trait_all %>% select(-c(Freq, species, siteID)) %>% column_to_rownames(var = "speciesID")
-rm(trait_gud, trait_skj, trait_ulv)
+trait_OTC <- trait_OTC %>% select(-c(siteID, species, Freq)) %>% column_to_rownames(var = "speciesID")
+trait_OTC <- prcomp(x = trait_OTC, center = FALSE, scale. = FALSE) # center and scale already done in lines above
+trait_OTC <- trait_OTC$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 83.7 % of overall variation
 
-trait_pca <- prcomp(x = trait_all, center = FALSE, scale. = FALSE) # center and scale already done in lines above
-trait_pca <- trait_pca$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 83.7 % of overall variation
+trait_C <- trait_C %>% select(-c(siteID, species, Freq)) %>% column_to_rownames(var = "speciesID")
+trait_C <- prcomp(x = trait_C, center = FALSE, scale. = FALSE) # center and scale already done in lines above
+trait_C <- trait_C$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 83.7 % of overall variation
+
+trait_all <- rbind(trait_OTC, trait_C)
+rm(trait_C, trait_OTC)
 
 plan(multisession)
 ptm <- proc.time()
 fric_all <- foreach(i = 1:100, .combine = rbind, .options.future = list(seed = TRUE)) %dofuture% {
 set.seed(0+i)
-kernel.alpha(kernel.build(comm = comm_all, trait = trait_pca, distance = "euclidean", method.hv = "gaussian",
+kernel.alpha(kernel.build(comm = comm_all, trait = trait_all, distance = "euclidean", method.hv = "gaussian",
                              abund = FALSE, weight = NULL, axes = 0, convert = 0))
 }
 proc.time() - ptm
 
 fric_all <- as.data.frame(fric_all)
+colMeans(fric_all)
 ```
 
 # Plotting Level 3
