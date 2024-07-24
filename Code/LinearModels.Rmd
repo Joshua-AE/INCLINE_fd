@@ -17,9 +17,12 @@ library(lmerTest)
 library(sjPlot)
 library(broom)
 library(ggeffects) 
+library(ggpubr)
 
 #### Load data ----
 # Change eventually to use datadownloader to call from OSF repository
+# Please remember to download the latest version from OSF!!!
+
 # Data imported as long format
 raw_traits <- readr::read_tsv("./Input data/PFTC6_Incline_clean_leaf_traits_2022.txt",
                               guess_max = Inf)
@@ -80,8 +83,9 @@ site_leaf_count <- traits_wide %>%
   summarize(n = n())
 
 #### Subset to core 16 initially -----
-# Subset to only key 16 species we collected across all the sites and treatments
-core_16_species <- c("Achillea_millefolium",
+# Subset to only key 13/16 species we collected across all the sites and treatments
+# Not all of the 16 species were evenly collected across the OTC/C or precipitation gradient
+core_13_species <- c(# "Achillea_millefolium", In the original plan, but not enough samples
 "Agrostis_capillaris",
 "Alchemilla_alpina",
 "Anthoxanthum_odoratum",
@@ -89,49 +93,51 @@ core_16_species <- c("Achillea_millefolium",
 "Campanula_rotundifolia",
 "Carex_bigelowii",
 "Carex_vaginata",
-"Festuca_rubra",
+# "Festuca_rubra", In the original plan, but not even enough samples
 "Leontodon_autumnalis",
 "Poa_alpina",
 "Salix_herbacea",
-"Saussurea_alpina",
+# "Saussurea_alpina", In the original plan, but not even enough samples
 "Sibbaldia_procumbens",
 "Thalictrum_alpinum",
 "Veronica_alpina")
 
-traits_wide_16 <- traits_wide %>% 
-  filter(species %in% core_16_species)
+traits_wide_13 <- traits_wide %>% 
+  filter(species %in% core_13_species)
 
 # If needed back into long format ----
-traits_16 <- traits_wide_16 |> 
-  pivot_longer(names_to = "trait", values_to = "value", cols = 11:16)
+traits_13 <- traits_wide_13 |> 
+  pivot_longer(names_to = "trait", values_to = "value", cols = 11:13)
 
 ```
 
-
+# Linear Models
+Just preliminary trials to get some figures for the PFTC6 overview chat.
+Not intended to be the final concepts for modelling at all.
 
 ```{r LinearModels}
 
 #### Check trait distributions for normality -----
 # Plotting a histogram for each trait to determine if the data is skewed
-(traits_16 %>% 
+(traits_13 %>% 
   ggplot(aes(x = value)) +
   geom_histogram() +
   facet_wrap(~trait, scales = "free") +
-  labs(title = "16 Species Trait Distribution"))
+  labs(title = "13 Species Trait Distribution"))
 
 #log transforming traits because of skew
-traits_16_log <- traits_16 %>% 
+traits_13_log <- traits_13 %>% 
   mutate(value = log(value))
 
 #plotting log transformed traits to confirm skew is gone
-(traits_16_log %>% 
+(traits_13_log %>% 
   ggplot(aes(x = value)) +
   geom_histogram() +
   facet_wrap(~trait, scales = "free") + 
-  labs(title = "16 Species Trait Distribution Logged"))
+  labs(title = "13 Species Trait Distribution Logged"))
 
 # Set up data frame for fitting models to log-transformed data
-traits_wide_16_lm = traits_wide_16 %>% 
+traits_wide_13_lm = traits_wide_13 %>% 
   mutate(ln_height = log(plant_height_cm),
          ln_dry_mass = log(dry_mass_g),
          ln_area = log(leaf_area_cm2),
@@ -142,40 +148,40 @@ traits_wide_16_lm = traits_wide_16 %>%
 
 #### Run Models ----
 
-lm_SLA_ln <- lm(ln_sla ~ warming*species*precip, data = traits_wide_16_lm)
+lm_SLA_ln <- lm(ln_sla ~ warming*species*precip, data = traits_wide_13_lm)
 summary(lm_SLA_ln)
 anova(lm_SLA_ln)
 glance(lm_SLA_ln)
 sjPlot::plot_model(lm_SLA_ln, type = "pred", terms = c("precip", "species", "warming"))
 
-lm_LDMC_ln <- lm(ln_ldmc ~  warming*species*precip, data = traits_wide_16_lm)
+lm_LDMC_ln <- lm(ln_ldmc ~  warming*species*precip, data = traits_wide_13_lm)
 summary(lm_LDMC_ln)
 anova(lm_LDMC_ln)
 sjPlot::plot_model(lm_LDMC_ln, type = "pred", terms = c("precip", "species", "warming"))
 
-lm_plant_height_ln <- lm(ln_height ~  warming*species*precip, data = traits_wide_16_lm)
+lm_plant_height_ln <- lm(ln_height ~  warming*species*precip, data = traits_wide_13_lm)
 summary(lm_plant_height_ln)
 anova(lm_plant_height_ln)
 sjPlot::plot_model(lm_plant_height_ln, type = "pred", terms = c("precip", "species", "warming"))
 
-lm_dry_mass_ln <- lm(ln_dry_mass ~  warming*species*precip, data = traits_wide_16_lm)
+lm_dry_mass_ln <- lm(ln_dry_mass ~  warming*species*precip, data = traits_wide_13_lm)
 summary(lm_dry_mass_ln)
 anova(lm_dry_mass_ln)
 sjPlot::plot_model(lm_dry_mass_ln, type = "pred", terms = c("precip", "species", "warming"))
 
-lm_leaf_thickness_ln <- lm(ln_thickness ~  warming*species*precip, data = traits_wide_16_lm)
+lm_leaf_thickness_ln <- lm(ln_thickness ~  warming*species*precip, data = traits_wide_13_lm)
 summary(lm_leaf_thickness_ln)
 anova(lm_leaf_thickness_ln)
 sjPlot::plot_model(lm_leaf_thickness_ln, type = "pred", terms = c("precip", "species", "warming"))
 
-lm_leaf_area_ln <- lm(ln_area ~ warming*species*precip, data = traits_wide_16_lm)
+lm_leaf_area_ln <- lm(ln_area ~ warming*species*precip, data = traits_wide_13_lm)
 summary(lm_leaf_area_ln)
 anova(lm_leaf_area_ln)
 sjPlot::plot_model(lm_leaf_area_ln, type = "pred", terms = c("precip", "species", "warming"))
 
 # Generate data that fit the linear models from above 
 
-lm_pred = traits_wide_16_lm[,1:9] %>% 
+lm_pred = traits_wide_13_lm[,1:9] %>% 
   mutate(ln_dry_mass = predict(lm_dry_mass_ln, re.form=NA, newdata=.),
          ln_area = predict(lm_leaf_area_ln, re.form=NA, newdata=.),
          ln_sla = predict(lm_SLA_ln, re.form=NA, newdata=.),
@@ -227,7 +233,7 @@ lm_pred = traits_wide_16_lm[,1:9] %>%
     geom_point(aes(group = species, colour = species)) +
     geom_boxplot(aes(alpha = 0.1)) +
     facet_grid(~precip) +
-    ylab("ln Leaf Thickness")+ 
+    ylab("ln Leaf Dry Mass")+ 
     xlab(NULL) +
     theme_bw())
 
@@ -257,8 +263,6 @@ lm_pred = traits_wide_16_lm[,1:9] %>%
     xlab(NULL) +
     theme_bw())
 
-
-
 # Assemble combined plot of all plant functional traits by prediction and raw data
 # Can choose to save, or just run plot intially wihtout 'png' call.
 # For figure production, save as pdf so edits can be done in illustator.
@@ -275,7 +279,121 @@ dev.off()
 # Still very much a work in progress.
 (p_drymass2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_dry_mass, color = species)) +
     geom_line() + 
-    geom_jitter(data = traits_wide_16_lm, 
+    geom_jitter(data = traits_wide_13_lm, 
+                aes(x = precip, y = ln_dry_mass), 
+                width = 10,
+                height=0,
+                size = 0.1,
+                alpha = 0.3) +
+    ylab("ln Dry Mass")+
+    xlab(NULL)+
+    scale_x_continuous(breaks= c(1126,2130,3402)))
+
+
+
+##### - Present the figures again, but this time switching the x axis to be the precipitation and having warming as a facet option.
+
+(p_height2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_height)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    facet_grid(~warming) +
+    ylab("ln Plant Height")+ 
+    xlab(NULL) +
+    xlim(1050, 3500) + # Makes scale x break points below not at the far edges of the figure
+    scale_x_continuous(breaks= c(1126,2130,3402)) +
+    theme_bw())
+
+(p_sla2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_sla)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    facet_grid(~warming) +
+    ylab("ln SLA")+ 
+    xlab(NULL) +
+    xlim(1050, 3500) + # Makes scale x break points below not at the far edges of the figure
+    scale_x_continuous(breaks= c(1126,2130,3402)) +
+    theme_bw())
+
+(p_ldmc2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_ldmc)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    facet_grid(~warming) +
+    ylab("ln LDMC")+ 
+    xlab(NULL) +
+    xlim(1050, 3500) + # Makes scale x break points below not at the far edges of the figure
+    scale_x_continuous(breaks= c(1126,2130,3402)) +
+    theme_bw())
+
+(p_leafthickness2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_thickness)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    facet_grid(~warming) +
+    ylab("ln Leaf Thickness")+ 
+    xlab(NULL) +
+    xlim(1050, 3500) + # Makes scale x break points below not at the far edges of the figure
+    scale_x_continuous(breaks= c(1126,2130,3402)) +
+    theme_bw())
+
+(p_drymass2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_dry_mass)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    facet_grid(~warming) +
+    ylab("ln Leaf Dry Mass")+ 
+    xlab(NULL) +
+    xlim(1050, 3500) + # Makes scale x break points below not at the far edges of the figure
+    scale_x_continuous(breaks= c(1126,2130,3402)) +
+    theme_bw())
+
+(p_leafarea2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_area)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species, colour = species)) +
+    facet_grid(~warming) +
+    ylab("ln Leaf Area")+ 
+    xlab(NULL) +
+    xlim(1050, 3500) + # Makes scale x break points below not at the far edges of the figure
+    scale_x_continuous(breaks= c(1126,2130,3402)) +
+    theme_bw())
+
+
+(p_sla2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_sla, colour = species)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species)) +
+    facet_grid(~warming) +
+    ylab("ln SLA")+ 
+    xlab(NULL) +
+    xlim(1050, 3500) + # Makes scale x break points below not at the far edges of the figure
+    scale_x_continuous(breaks= c(1126,2130,3402)) +
+    theme_bw())
+
+
+(p_area_2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_area, colour = species)) +
+    geom_line(aes(group = species, color = species)) +
+    geom_point(aes(group = species)) +
+    facet_grid(~warming) +
+    ylab("ln Leaf Area")+ 
+    xlab(NULL) +
+    xlim(1050, 3500) + # Makes scale x break points below not at the far edges of the figure
+    scale_x_continuous(breaks= c(1126,2130,3402)) +
+    theme_bw())
+
+
+# Assemble combined plot of all plant functional traits by prediction and raw data
+# This version is with precipitation along the x-axis
+# Can choose to save, or just run plot intially wihtout 'png' call.
+# For figure production, save as pdf so edits can be done in illustator.
+
+png("PFTC6_INCLINE_lm_Plot2.png", width = 28,height = 21, units = "cm", res=800)
+
+(ggarrange(p_drymass2, p_ldmc2, p_leafarea2, p_sla2, p_leafthickness2, p_height2,
+          nrow =2, ncol = 3, heights = c(1,1), labels="AUTO", align = "hv",
+          common.legend = TRUE, legend="bottom"))
+dev.off()
+
+
+# Example of alternative plotting approach with precip along x axis.
+# Still very much a work in progress.
+(p_drymass2.2 <- ggplot(data = lm_pred, aes(x = precip, y = ln_dry_mass, color = species)) +
+    geom_line() + 
+    geom_jitter(data = traits_wide_13_lm, 
                 aes(x = precip, y = ln_dry_mass), 
                 width = 10,
                 height=0,
