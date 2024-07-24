@@ -13,8 +13,15 @@ library("tidyverse")
 # Re-arranging data frame
 ```{r}
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
+chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
 traits <- select(raw_traits, c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
-  filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g"))# one sample removed: DLL3549
+  filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g")) # one sample removed: DLL3549
+
+chem_traits <- select(chem_traits, c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
+  filter(trait %in% c("c_percent", "n_percent", "c_n", "d15n", "d13c", "p_percent")) # no sample removed
+
+traits <- rbind(traits, chem_traits)
+test <- as.data.frame(table(traits$trait))
 
 # aggregated by site, block and experiment____________________________________________________________________________
 traits1 <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(mean))
