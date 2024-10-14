@@ -8,6 +8,7 @@ output: html_document
 # Packages
 ```{r echo = FALSE, print = FALSE, message = FALSE}
 library("tidyverse")
+library("ie2misc") # madstat mean absolute deviation
 ```
 
 # Re-arranging data frame
@@ -16,7 +17,7 @@ raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_202
 chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
 chem_traits$merged <- case_when(str_detect(chem_traits$ID_merged, "_") == TRUE ~ "merged") # updates 'merged' column to flag all merged samples
 # I checked that only samples were merged from the same site, block and treatment
-traits <- select(raw_traits, c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
+traits <- raw_traits %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
   filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g")) # one sample removed: DLL3549
 
 chem_traits <- chem_traits %>% group_by(ID_merged, trait) %>% sample_n(1) # removes all duplicated samples
@@ -25,6 +26,7 @@ chem_traits <- chem_traits %>% ungroup() %>% select(c(siteID, blockID, warming, 
 
 traits <- rbind(traits, chem_traits)
 test <- as.data.frame(table(traits$trait))
+rm(test, chem_traits, raw_traits)
 
 # aggregated by site, block and experiment____________________________________________________________________________
 traits1 <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(mean))
@@ -78,18 +80,25 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 
 # Plotting SES values
 ```{r}
+n_obs <- traits4 %>% filter(!is.na(SES)) %>% group_by(siteID, trait) %>% mutate(n_obs = n()) %>%
+                     sample_n(1) %>% select(siteID, trait, n_obs)
 SES_sites <- traits4 %>% select(c(1:3,5,8,14)) %>% na.omit()
 SES_sites <- aggregate(SES_sites$SES, by = SES_sites[,c(1,3)], FUN = mean)
 SES_sites <- SES_sites %>% rename(`mean SES` = x)
-SES_sites$trait <- case_when(SES_sites$trait == "leaf_area_cm2" ~ "LA", SES_sites$trait == "leaf_thickness_mm" ~ "LTH", SES_sites$trait == "sla_cm2_g" ~ "SLA", SES_sites$trait == "plant_height_cm" ~ "H", SES_sites$trait == "ldmc" ~ "LDMC", SES_sites$trait == "c_n" ~ "C/N", SES_sites$trait == "c_percent" ~ "C %", SES_sites$trait == "d13c" ~ "D13C", SES_sites$trait == "d15n" ~ "D15N", SES_sites$trait == "n_percent" ~ "N %", )
+SES_sites$trait <- case_when(SES_sites$trait == "leaf_area_cm2" ~ "LA", SES_sites$trait == "leaf_thickness_mm" ~ "LTH", SES_sites$trait == "sla_cm2_g" ~ "SLA", SES_sites$trait == "plant_height_cm" ~ "H", SES_sites$trait == "ldmc" ~ "LDMC", SES_sites$trait == "c_n" ~ "C/N", SES_sites$trait == "c_percent" ~ "C %", SES_sites$trait == "d13c" ~ "D13C", SES_sites$trait == "d15n" ~ "D15N", SES_sites$trait == "n_percent" ~ "N %")
 SES_sites$level <- case_when(SES_sites$`mean SES` < 0 ~ "negative", SES_sites$`mean SES` > 0 ~ "positive")
+
+test <- SES_sites %>% group_by(trait) %>% mutate(mean_trait = mean(`mean SES`)) %>% sample_n(1) %>% select(c(trait, mean_trait))
+
+SES_sites$siteID <- factor(SES_sites$siteID, levels = c("Ulvehaugen", "Gudmedalen", "Skjelingahaugen"))
+SES_sites$trait <- factor(SES_sites$trait, levels = c("C %", "N %", "C/N", "D13C", "D15N", "H", "LA", "LDMC", "LTH", "SLA"))
 
 SES_plot <- ggplot(SES_sites, aes(x = siteID, y = `mean SES`, shape = level)) +  
   geom_point(size = 3) +
   scale_shape_manual(values = c(1, 16)) +
-  geom_hline(yintercept=0, lty=2, size=0.25) +
+  geom_hline(yintercept = 0, lty = 2, size = 0.25) +
   coord_flip() +
-  xlab("") + ylab("Mean Cohen's d") +
+  xlab("") + ylab("Absolute Cohen's d") +
   theme_bw() +
   guides(colour = "legend", shape = "none") +
   facet_grid(. ~ trait) +
@@ -99,18 +108,37 @@ SES_plot <- ggplot(SES_sites, aes(x = siteID, y = `mean SES`, shape = level)) +
         panel.background = element_blank(),
         legend.title = element_blank(),
         legend.position= "top",
-        legend.text = element_text(size = 12),
-        axis.title.x = element_text(size = 12),
-        axis.text.x = element_text(angle=45, vjust=.5, size = 12),
-        axis.text.y = element_text(vjust=.5, size = 12))
+        legend.text = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.text.x = element_text(angle=45, vjust=.5, size = 16),
+        axis.text.y = element_text(vjust=.5, size = 16),
+        strip.text = element_text(size = 16, face = "bold"))
 
-# print 800 x 400
+# print 1200 x 400
+
+SES_sites$siteID <- factor(SES_sites$siteID, levels = c("Skjelingahaugen", "Gudmedalen", "Ulvehaugen"))
+
+SES_plot2 <- ggplot(SES_sites, aes(x = siteID, y = `mean SES`, group = trait)) +
+  geom_line(aes(color = trait), linewidth = 1, alpha = 0.5) +
+  geom_point(aes(color = trait), size = 2) +
+  theme_classic() + xlab("") + ylab("Absolute Cohen's d") +
+  theme(axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14, face = "bold"))
+# print 600 x 400
 ```
 
 # Species specific plasticity and succeptibility to warming
 ```{r}
 distribution <- readr::read_tsv("../Input data/species classifications.txt", guess_max = Inf)
+raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
 
+# Somehow for d15n values range around 0 so relative sd makes no sense as mean = 0 and sd = 1 ..
+# Instead, use e.g. MAD mean absolute deviation. 1/n * sum(abs(x-mean))
+
+species_mad <- aggregate(traits$value, by = traits[,4:5],
+                         FUN = function(x) ie2misc::madstat(x))
 species_sd <- aggregate(traits$value, by = traits[,4:5], FUN = na.omit(var))
 species_sd$x <- sqrt(species_sd$x)
 species_sd <- rename(species_sd, sd = x)
@@ -122,10 +150,10 @@ species_abs_SES <- traits4 %>% na.omit() %>% group_by(species) %>% summarise(mea
 
 species_sd <- cbind(species_sd, species_mean[,3])
 species_sd <- rename(species_sd, mean = `species_mean[, 3]`)
-species_sd <- species_sd %>% mutate(rel_sd = sd / mean) %>% select(-c(sd, mean))
+species_sd <- species_sd %>% mutate(rel_sd = sd / mean) #%>% select(-c(sd, mean))
 
-species_sd <- species_sd %>% group_by(species) %>% summarise(mean_sd = mean(rel_sd)) %>% left_join(species_n, by = "species") %>%
-  left_join(distribution, by = "species") %>% left_join(species_abs_SES, by = "species")
+species_sd <- species_sd %>% group_by(species) %>% summarise(mean_sd = mean(rel_sd, na.rm = T)) %>%
+  left_join(species_n, by = "species") %>% left_join(distribution, by = "species") %>% left_join(species_abs_SES, by = "species")
 
 rm(species_mean, species_n, distribution, species_abs_SES)
 ```
