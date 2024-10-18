@@ -11,7 +11,7 @@ library("tidyverse")
 library("ie2misc") # madstat mean absolute deviation
 ```
 
-# Re-arranging data frame
+# Re-arranging data frame and computing Cohen's d
 ```{r}
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf) # updated version of this file has leaf area and SLA of Avenella flexuosa, Festuca vivipara, Nardus stricta, Festuca ovin and Festuca rubra doubled
 chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
@@ -42,7 +42,7 @@ traits2 <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(mean))
 traits2 <- rename(traits2, mean_value = x)
 traits2l <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(length))
 traits2l <- rename(traits2l, n_obs = x)
-traits2sd <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(var)) # defaults to sample variance, not population variance
+traits2sd <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(var)) # defaults to sample not population variance
 traits2sd$x <- sqrt(traits2sd$x)
 traits2sd <- rename(traits2sd, sd = x)
 
@@ -131,11 +131,40 @@ SES_plot2 <- ggplot(SES_sites, aes(x = siteID, y = `mean SES`, group = trait)) +
 
 # Species specific plasticity and succeptibility to warming
 ```{r}
+# Species without paired observations (inside and outside OTC) are omitted!!
 distribution <- readr::read_tsv("../Input data/species classifications.txt", guess_max = Inf)
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
 
-# Somehow for d15n values range around 0 so relative sd makes no sense as mean = 0 and sd = 1 ..
-# Instead, use e.g. MAD mean absolute deviation. 1/n * sum(abs(x-mean))
+traits_scaled <- traits %>% as.data.frame() %>% select(species, trait, value)
+traits_scaled <- traits_scaled %>% semi_join(filter(traits4, !is.na(SES)), by = "species") # remove species without SES values
+traits_scaled <- traits_scaled %>% group_by(trait) %>% mutate(scaled_values = scale(value, center = T, scale = T)) %>% ungroup()
+
+species_sd <- aggregate(traits_scaled$scaled_values, by = traits_scaled[,1:2], FUN = na.omit(var))
+species_sd$V1 <- sqrt(species_sd$V1)
+species_sd <- rename(species_sd, sd = V1)
+species_sd <- species_sd %>% group_by(species) %>% summarise(mean_sd = mean(sd, na.rm = T))
+
+species_n <- raw_traits %>% group_by(ID) %>% select(c(species, ID)) %>% slice_sample(n = 1)
+species_n <- as.data.frame(table(species_n$species))
+species_n <- rename(species_n, species = Var1)
+
+mean_abs_SES <- traits4 %>% select(species, SES) %>% na.omit() %>% mutate(SES = abs(SES)) # mean absolute SES per species
+mean_abs_SES <- mean_abs_SES %>% group_by(species) %>% summarise(mean_SES = mean(SES, na.rm = T)) # susceptibility to warming
+
+sgnf_SES <- traits4 %>% filter(SES >= 1 | SES <= -1) %>% group_by(species) %>% summarise(sgnf_SES = n())
+
+species_sd <- species_sd %>% left_join(species_n, by = "species") %>% left_join(distribution, by = "species") %>% left_join(mean_abs_SES, by = "species") %>% left_join(sgnf_SES, by = "species")
+
+rm(traits_scaled, species_n, distribution, raw_traits, mean_abs_SES, sgnf_SES)
+
+```
+
+# DEPRECTAED
+```{r}
+# d13c only has negative values while d15n has positive and negative values
+# Somehow for d15n, values range around 0 so relative sd makes no sense as mean = 0 and sd = 1 ..
+# Instead, use e.g. MAD mean absolute deviation. 1/n * sum(abs(x-mean)). That doesnt solve the problem. The problem is that traits have different units of measurement. To be able to compare variation between traits, I divide sd by mean which is not possible for d15n. Instead, scale the traits seperately (?)
+# Computation of Cohen's d is not affected by values ranging around 0
 
 species_mad <- aggregate(traits$value, by = traits[,4:5],
                          FUN = function(x) ie2misc::madstat(x))
@@ -143,27 +172,34 @@ species_sd <- aggregate(traits$value, by = traits[,4:5], FUN = na.omit(var))
 species_sd$x <- sqrt(species_sd$x)
 species_sd <- rename(species_sd, sd = x)
 species_mean <- aggregate(traits$value, by = traits[,4:5], FUN = na.omit(mean))
-species_n <- raw_traits %>% group_by(ID) %>% select(c(species, ID)) %>% slice_sample(n = 1)
-species_n <- as.data.frame(table(species_n$species))
-species_n <- rename(species_n, species = Var1)
+
 species_abs_SES <- traits4 %>% na.omit() %>% group_by(species) %>% summarise(mean_SES = mean(abs(SES)))
 
 species_sd <- cbind(species_sd, species_mean[,3])
 species_sd <- rename(species_sd, mean = `species_mean[, 3]`)
 species_sd <- species_sd %>% mutate(rel_sd = sd / mean) #%>% select(-c(sd, mean))
 
-species_sd <- species_sd %>% group_by(species) %>% summarise(mean_sd = mean(rel_sd, na.rm = T)) %>%
-  left_join(species_n, by = "species") %>% left_join(distribution, by = "species") %>% left_join(species_abs_SES, by = "species")
 
-rm(species_mean, species_n, distribution, species_abs_SES)
+rm(species_mean, species_abs_SES)
 ```
 
-# plotting relationship between succeptibility to warming and species type
+# plotting relationship between trait plasticity and species type
 ```{r}
-p1 <- ggplot(species_sd, aes(x = as.factor(alpine), y = mean_SES)) + geom_boxplot(outlier.alpha = 0) + theme_classic() +
+p1 <- ggplot(species_sd, aes(x = as.factor(alpine), y = mean_sd)) + geom_boxplot(outlier.alpha = 0) + theme_classic() +
   geom_jitter(width = 0.3, height = 0, alpha = 0.3) +
-  scale_y_continuous(breaks = c(0, 0.3, 0.6, 0.9, 1.2), limits = c(0, 1.2)) +
-  scale_x_discrete(labels = c("Generalist", "Alpine")) + xlab("") + ylab("Mean SES per species") +
+  scale_y_continuous(breaks = c(0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1), limits = c(0.4, 1)) +
+  scale_x_discrete(labels = c("Generalist", "Alpine")) + xlab("") + ylab("Mean sd per species") +
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
+# print 350 x 400
+
+```
+
+# plotting relationship between susceptibility to warming and species type
+```{r}
+p2<- ggplot(species_sd, aes(x = as.factor(alpine), y = mean_SES)) + geom_boxplot(outlier.alpha = 0) + theme_classic() +
+  geom_jitter(width = 0.3, height = 0, alpha = 0.3) +
+  scale_y_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8), limits = c(0, 1)) +
+  scale_x_discrete(labels = c("Generalist", "Alpine")) + xlab("") + ylab("Mean absolute SES per species") +
   theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
 # print 350 x 400
 
