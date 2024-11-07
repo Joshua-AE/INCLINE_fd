@@ -10,6 +10,8 @@ library("tidyverse")
 library("BAT") # computes functional metrics based on Mammola and Cardoso (2020)
 library("hypervolume") # computes hypervolumes based on XY
 library("fastDummies") # create dummy columns for cetegorical traits
+library("psych") # create correlation matrix
+library("factoextra") # generate PCA output graphs
 
 #packages for parallel computation
 library("foreach")
@@ -17,36 +19,60 @@ library("future")
 library("doFuture")
 ```
 
-# Re-arranging data frame
+# Re-arranging data frame and merge leaf/growth traits with chem traits
 ```{r}
-raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
-traits <- select(raw_traits, c(ID, siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
-  filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g"))# one sample removed: DLL3549
-rm(raw_traits)
 # all rows in the comm matrix have to sum to 1. rownames = sampling units, colnames = species
 # traits in the traits table should be scaled, centered and not highly correlated. rownames = species, colnames = traits.
 # colnames in comm and rownames in trait have to match!
+
+raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf) # updated version of this file has leaf area and SLA of Avenella flexuosa, Festuca vivipara, Nardus stricta, Festuca ovin and Festuca rubra doubled
+chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
+chem_traits$merged <- case_when(str_detect(chem_traits$ID_merged, "_") == TRUE ~ "merged") # updates 'merged' column to flag all merged samples
+# I checked that only samples were merged from the same site, block and treatment
+traits <- raw_traits %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
+  filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g")) # one sample removed: DLL3549
+
+chem_traits <- chem_traits %>% group_by(ID_merged, trait) %>% sample_n(1) # removes all duplicated samples
+chem_traits <- chem_traits %>% ungroup() %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
+  filter(trait %in% c("c_percent", "n_percent", "c_n", "d15n", "d13c")) # no sample removed, but trait phosphorus percentage removed because of missing data
+
+traits <- rbind(traits, chem_traits)
+test <- as.data.frame(table(traits$trait))
+rm(test, chem_traits, raw_traits)
+```
+
+# Select which dataset to analyse. Skip to analyze both
+```{r}
+#traits <- traits %>% filter(trait %in% c("c_percent", "n_percent", "d15n", "d13c")) # only chem traits except C/N ratio, which is linearly correlated with N %. The other 4 traits are independent of each other.
+# Vaccinium vitis-idaea and Vaccinium myrtillus lack d13c measurements.
+traits <- traits %>% filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g")) # only leaf and growth traits
 ```
 
 # Hypervolume based on treatment throughout sites (Level 1, scale first)
 ```{r, print = FALSE}
-# This step calculates the mean value for each species, trait and treatment. It also removes 10 species that only occur in C or W.
+# This step calculates the mean value for each species, trait and treatment. It also removes 10 species that only occur in C or W plus two that don't have d13c measurements
 trait_i <- traits %>% group_by(warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>%
-          pivot_wider(names_from = trait, values_from = mean_value)
+          pivot_wider(names_from = trait, values_from = mean_value) %>% na.omit() # Removes all species who lack one or several trait measurements
 trait_i <- trait_i %>% ungroup() %>% left_join(as.data.frame(table(trait_i$species)), by = c("species" = "Var1")) %>%
   filter(Freq == 2)
 trait_CW <- traits %>% group_by(species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>%
           pivot_wider(names_from = trait, values_from = mean_value) # mean value per species irrespective of treatment
 trait_CW <- trait_CW %>% mutate(warming = "CW") %>% semi_join(trait_i, by = "species") %>% ungroup()
-trait_i <- trait_i %>% select(-c("Freq")) %>% rbind(trait_CW) %>% mutate(speciesID = paste(species, warming, sep = " "))
-trait_i[,c(3:7)] <- scale(trait_i[,c(3:7)], center = T, scale = T) # scaling all mean values together. 
+trait_i <- trait_i %>% select(-c("Freq")) %>% rbind(trait_CW) %>%
+           mutate(speciesID = paste(species, warming, sep = " ")) %>% as.data.frame()
 
 #This step creates the community matrix based on the trait tables. It does not matter for functional richness (Fric) computation if each species has abundance of 1 or 1/35 or 1/38 etc.
 comm_all <- trait_i %>% select(c(warming, speciesID)) %>% dummy_cols(select_columns = "warming", remove_selected_columns = T) %>% column_to_rownames(var = "speciesID") %>% t()
-
 trait_i <- trait_i %>% select(-c(warming, species)) %>% column_to_rownames(var = "speciesID")
+
+trait_cwm <- trait_i %>% mutate(treatment = c(rep("C", 28), rep("W", 28), rep("CW", 28)))
+trait_cwm <- trait_cwm %>% group_by(treatment) %>%
+             summarise(across(1:5, list(mean = ~mean(.), sd = ~sd(.)), .names = "{col}_{fn}"))
+
+trait_i[,c(1:5)] <- scale(trait_i[,c(1:5)], center = T, scale = T) # scaling all mean values together. 
 trait_pca <- prcomp(x = trait_i, center = FALSE, scale. = FALSE) # center and scale already done in lines above
-trait_pca <- trait_pca$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 85.5 % of overall variation
+fviz_eig(trait_pca, addlabels = T, barfill = "blue", barcolor = "black")
+trait_pca <- trait_pca$x %>% as.data.frame() %>% select(c(1:3)) # primary 3 components account for 88.1 % of overall variation
 
 # The for() loop calculates Fric for each treatment group (control, OTC, both) 100 times
 out <- list()
@@ -62,6 +88,7 @@ fric_CW <- as.data.frame(out)
 colnames(fric_CW) <- c(1:100)
 fric_CW <- fric_CW %>% t() %>% as.data.frame() %>% rename(Control = warming_C, OTC = warming_W, `all samples` = warming_CW)
 fric_CW <- pivot_longer(fric_CW, cols = 1:3, names_to = "warming", values_to = "fric")
+fric_means <- fric_CW %>% group_by(warming) %>% summarise(mean_fric = mean(fric, na.rm = TRUE))
 
 distr <- ggplot(fric_CW, aes(x = fric, color = warming)) + 
   geom_density(data = subset(fric_CW, warming == 'OTC'),fill = "red", alpha = 0.2) +
@@ -71,6 +98,8 @@ distr <- ggplot(fric_CW, aes(x = fric, color = warming)) +
   guides(color = guide_legend(override.aes = list(fill = c("red", "blue", "green")))) + theme(legend.position = c(0.6, 0.9)) +
   labs(title = NULL, x ='Functional richness', y ='density')
 # print 400 x 300
+
+rm(distr, fric_means, fric_CW, i, hp, out, trait_pca, trait_i, trait_CW, comm_all)
 ```
 
 # Site-specific hypervolumes -> effect of warming (Level 2)
