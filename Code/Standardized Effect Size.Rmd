@@ -26,23 +26,26 @@ chem_traits <- chem_traits %>% ungroup() %>% select(c(siteID, blockID, warming, 
 
 traits <- rbind(traits, chem_traits)
 test <- as.data.frame(table(traits$trait))
-rm(test, chem_traits, raw_traits)
+selected_sp <- traits %>% select(siteID, warming, species) %>% unique() %>% group_by(species) %>% mutate(Freq = n()) %>% filter(Freq == 6) # filtering species we have samples for in C and W for each site. n = 13. 2 sites n = 17
+selected_sp <- unique(selected_sp$species)
+traits_n13 <- traits %>% filter(species %in% selected_sp) # trait set with only 13 selected species. 37.3 % of data omitted
+rm(test, chem_traits, raw_traits, selected_sp)
 
 # aggregated by site, block and experiment____________________________________________________________________________
-traits1 <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(mean))
+traits1 <- aggregate(traits_n13$value, by = traits_n13[,1:5], FUN = na.omit(mean))
 traits1 <- rename(traits1, mean_value = x)
-traits1l <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(length))
+traits1l <- aggregate(traits_n13$value, by = traits_n13[,1:5], FUN = na.omit(length))
 traits1l <- rename(traits1l, n_obs = x)
-traits1sd <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(var)) # defaults to sample variance, not population variance
+traits1sd <- aggregate(traits_n13$value, by = traits_n13[,1:5], FUN = na.omit(var)) # default: sample not population variance
 traits1sd$x <- sqrt(traits1sd$x)
 traits1sd <- rename(traits1sd, sd = x)
 
 # aggregated by site and experiment__________________________________________________________________________________
-traits2 <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(mean))
+traits2 <- aggregate(traits_n13$value, by = traits_n13[,c(1,3:5)], FUN = na.omit(mean))
 traits2 <- rename(traits2, mean_value = x)
-traits2l <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(length))
+traits2l <- aggregate(traits_n13$value, by = traits_n13[,c(1,3:5)], FUN = na.omit(length))
 traits2l <- rename(traits2l, n_obs = x)
-traits2sd <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(var)) # defaults to sample not population variance
+traits2sd <- aggregate(traits_n13$value, by = traits_n13[,c(1,3:5)], FUN = na.omit(var)) # default: sample not population variance
 traits2sd$x <- sqrt(traits2sd$x)
 traits2sd <- rename(traits2sd, sd = x)
 
