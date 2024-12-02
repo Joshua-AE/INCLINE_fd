@@ -1,5 +1,5 @@
 ---
-title: "Generalized linear models"
+title: "Mixed Effect Models"
 author: "Joshua et al."
 date: "2024-12-02"
 output: html_document
@@ -9,6 +9,9 @@ output: html_document
 ```{r}
 library("tidyverse")
 library("psych") # pairs.panel
+library("lme4")
+library("lmerTest") # p-values for lmer models
+library("MuMIn") # R2 values for lmer models
 ```
 
 #Loading and merging data tables
@@ -46,5 +49,29 @@ traits_w[,c(5, 10:11, 13:14)] <- log10(traits_w[,c(5, 10:11, 13:14)]) # Reducing
 
 # GLMs all species
 ```{r}
+# H ~ Warming1/0 + PRecip + (Warming* Precip) + Rand(Species)
 
+# precipitation is an ordered three level factor: 1300 mm in Ulvehaugen, 2100 mm in Gudmedalen, 3600 mm in Skjelingahaugen
+traits_w$precipitation <- case_when(traits_w$siteID == "Ulvehaugen" ~ "low", traits_w$siteID == "Gudmedalen" ~ "medium",
+                                    traits_w$siteID == "Skjelingahaugen" ~ "high")
+traits_w$precipitation <- factor(traits_w$precipitation, levels = c("low", "medium", "high"), ordered = TRUE)
+min(traits_w$precipitation)
+traits_w$warming <- as.factor(traits_w$warming)
+
+lme <- lme4::lmer(plant_height_cm ~ warming + precipitation + warming * precipitation + (1|species),
+                    data = traits_w, na.action = na.omit)
+summary(glm_h)
+anova(glm_h)
+
+null_model <- lmer(response_variable ~ (1 | species), data = your_data)
+anova(null_model, model) # Performs Likelihood Ratio Test (LRT)
+r.squaredGLMM(model)
+
+# Model diagnostics
+
+# Check residuals
+plot(residuals(model))
+
+# Check fitted values vs. residuals
+plot(fitted(model), residuals(model))
 ```
