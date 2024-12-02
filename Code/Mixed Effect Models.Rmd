@@ -11,6 +11,8 @@ library("tidyverse")
 library("psych") # pairs.panel
 library("lme4")
 library("MuMIn") # R2 values for lmer models
+library("lmerTest") # p-values for lmer models
+library("broom.mixed") # clean model output
 ```
 
 #Loading and merging data tables
@@ -57,13 +59,15 @@ traits_w$precipitation <- factor(traits_w$precipitation, levels = c("low", "medi
 min(traits_w$precipitation)
 traits_w$warming <- as.factor(traits_w$warming)
 
-lme_1 <- lme4::lmer(c_percent ~ warming + precipitation + warming * precipitation + (1 | species),
+lme_1 <- lmerTest::lmer(c_n ~ warming + precipitation + warming * precipitation + (1 | species),
                     data = traits_w, na.action = na.omit)
 summary(lme_1)
+summary_table <- tidy(lme_1) # with broom.mixed package
+print(summary_table)
 anova(lme_1)
 r.squaredGLMM(lme_1)
 
-null_model <- lme4::lmer(plant_height_cm ~ (1 | species), data = traits_w, na.action = na.omit)
+null_model <- lme4::lmer(c_n ~ (1 | species), data = traits_w, na.action = na.omit)
 anova(null_model, lme_1) # Performs Likelihood Ratio Test (LRT)
 
 # Model diagnostics
@@ -74,4 +78,6 @@ plot(lme_1)
 
 # Check fitted values vs. residuals
 plot(fitted(lme_1), residuals(lme_1))
+
+
 ```
