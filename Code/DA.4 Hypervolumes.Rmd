@@ -42,22 +42,23 @@ rm(test, chem_traits, raw_traits)
 ```
 
 # Select which dataset to analyse. Skip to analyze both
+# 10 traits are too much. We have to separat growth and leaf traits from chemical traits
 ```{r}
-trait_i <- traits %>% filter(trait != "c_n") %>% group_by(warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>%
-          pivot_wider(names_from = trait, values_from = mean_value) %>% na.omit() # group_by(siteID, blockID, warming, species, trait)
+trait_i <- traits %>% filter(trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>% group_by(siteID, blockID, warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value) %>% na.omit() # group_by(siteID, blockID, warming, species, trait) 
+# 
 
-trait_i <- trait_i %>% ungroup() %>% left_join(as.data.frame(table(trait_i$species)), by = c("species" = "Var1")) %>%
-  filter(Freq == 2)
 
-trait_i <- filter(trait_i, warming == "W")
+#trait_i <- trait_i %>% ungroup() %>% left_join(as.data.frame(table(trait_i$species)), by = c("species" = "Var1")) %>% filter(Freq == 2)
+
+#trait_i <- filter(trait_i, warming == "W")
 
 # sqrt() or log10() for traits that are right-skewed (positive skew)
 # leaf area, leaf thickness, plant height, c_n, sla(?) sqrt transform
-trait_i[,c(7:9)] <- log10(trait_i[,c(7:9)]) # c(9:11, 12:13)
+trait_i[,c(6:8)] <- log10(trait_i[,c(6:8)]) #
 
-pairs.panels(trait_i[,c(3:11)], smooth = TRUE, ellipse = FALSE, method = "pearson", hist.col = 4, stars = TRUE, cex = 4)
+pairs.panels(trait_i[,c(5:9)], smooth = TRUE, ellipse = FALSE, method = "pearson", hist.col = 4, stars = TRUE, cex = 4)
 # most correlated with other traits are: cn > sla > ldmc > h
-pca1 <- prcomp(trait_i[3:11], center = T, scale = T)
+pca1 <- prcomp(trait_i[5:9], center = T, scale = T)
 pcomp1 <- as.data.frame(pca1$rotation)
 summary(pca1)
 
