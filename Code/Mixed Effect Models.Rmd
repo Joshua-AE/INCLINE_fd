@@ -10,7 +10,6 @@ output: html_document
 library("tidyverse")
 library("psych") # pairs.panel
 library("lme4")
-library("lmerTest") # p-values for lmer models
 library("MuMIn") # R2 values for lmer models
 ```
 
@@ -58,20 +57,21 @@ traits_w$precipitation <- factor(traits_w$precipitation, levels = c("low", "medi
 min(traits_w$precipitation)
 traits_w$warming <- as.factor(traits_w$warming)
 
-lme <- lme4::lmer(plant_height_cm ~ warming + precipitation + warming * precipitation + (1|species),
+lme_1 <- lme4::lmer(c_percent ~ warming + precipitation + warming * precipitation + (1 | species),
                     data = traits_w, na.action = na.omit)
-summary(glm_h)
-anova(glm_h)
+summary(lme_1)
+anova(lme_1)
+r.squaredGLMM(lme_1)
 
-null_model <- lmer(response_variable ~ (1 | species), data = your_data)
-anova(null_model, model) # Performs Likelihood Ratio Test (LRT)
-r.squaredGLMM(model)
+null_model <- lme4::lmer(plant_height_cm ~ (1 | species), data = traits_w, na.action = na.omit)
+anova(null_model, lme_1) # Performs Likelihood Ratio Test (LRT)
 
 # Model diagnostics
 
 # Check residuals
-plot(residuals(model))
+plot(residuals(lme_1))
+plot(lme_1)
 
 # Check fitted values vs. residuals
-plot(fitted(model), residuals(model))
+plot(fitted(lme_1), residuals(lme_1))
 ```
