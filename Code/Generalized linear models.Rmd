@@ -1,0 +1,12 @@
+---
+title: "Generalized linear models"
+author: "Joshua et al."
+date: "2024-12-02"
+output: html_document
+---
+
+# Packages
+```{r}
+
+```
+
