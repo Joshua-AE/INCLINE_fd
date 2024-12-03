@@ -41,7 +41,11 @@ rm(test, chem_traits, raw_traits)
 
 # Table transformation and data Normality
 ```{r}
+# Trait values aggregated by block. Each species can have up to 30 data points (3 sites x 2 treatments x 5 blocks)
 traits_w <- traits %>% group_by(siteID, blockID, warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value) #%>% na.omit()
+
+# trait values aggregated by site. Each species can have up to 6 data points (3 sites x 2 treatments)
+traits_w <- traits %>% group_by(siteID, warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value)
 
 pairs.panels(traits_w[,c(5:14)], smooth = TRUE, ellipse = FALSE, method = "pearson", hist.col = 4, stars = TRUE, cex = 4)
 
@@ -59,25 +63,20 @@ traits_w$precipitation <- factor(traits_w$precipitation, levels = c("low", "medi
 min(traits_w$precipitation)
 traits_w$warming <- as.factor(traits_w$warming)
 
-lme_1 <- lmerTest::lmer(c_n ~ warming + precipitation + warming * precipitation + (1 | species),
+lme_1 <- lmerTest::lmer(c_percent ~ warming + precipitation + warming * precipitation + (1 | species),
                     data = traits_w, na.action = na.omit)
+null_model <- lme4::lmer(c_percent ~ (1 | species), data = traits_w, na.action = na.omit)
+
 summary(lme_1)
 summary_table <- tidy(lme_1) # with broom.mixed package
-print(summary_table)
 anova(lme_1)
 r.squaredGLMM(lme_1)
-
-null_model <- lme4::lmer(c_n ~ (1 | species), data = traits_w, na.action = na.omit)
 anova(null_model, lme_1) # Performs Likelihood Ratio Test (LRT)
 
 # Model diagnostics
-
-# Check residuals
-plot(residuals(lme_1))
+plot(residuals(lme_1)) # Check residuals
 plot(lme_1)
-
-# Check fitted values vs. residuals
-plot(fitted(lme_1), residuals(lme_1))
+plot(fitted(lme_1), residuals(lme_1)) # Check fitted values vs. residuals
 
 
 ```
