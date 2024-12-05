@@ -12,6 +12,7 @@ library("ie2misc") # madstat mean absolute deviation
 library("ggplot2")
 ```
 
+# Hi Joe
 # Re-arranging data frame and computing Cohen's d
 ```{r}
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf) # updated version of this file has leaf area and SLA of Avenella flexuosa, Festuca vivipara, Nardus stricta, Festuca ovin and Festuca rubra doubled
