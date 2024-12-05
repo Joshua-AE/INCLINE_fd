@@ -15,7 +15,12 @@ library("ggplot2")
 # Re-arranging data frame and computing Cohen's d
 ```{r}
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf) # updated version of this file has leaf area and SLA of Avenella flexuosa, Festuca vivipara, Nardus stricta, Festuca ovin and Festuca rubra doubled
-chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
+
+# OLD LEAF CHEMICAL TRAIT DATASET
+#chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
+
+# New chem traits table has 131 more c_n, 147 more d15n, 131 more of c_percent and n_percent, no change in d13c and p_percent
+chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022_new.txt", guess_max = Inf)
 chem_traits$merged <- case_when(str_detect(chem_traits$ID_merged, "_") == TRUE ~ "merged") # updates 'merged' column to flag all merged samples
 # I checked that only samples were merged from the same site, block and treatment
 traits <- raw_traits %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
