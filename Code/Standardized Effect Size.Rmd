@@ -56,15 +56,15 @@ traits2sd <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(var))
 traits2sd$x <- sqrt(traits2sd$x)
 traits2sd <- rename(traits2sd, sd = x)
 
-traits3 <- cbind(traits2, traits2l$n_obs, traits2sd$sd)
-traits3 <- rename(traits3, n_obs = `traits2l$n_obs`, sd = `traits2sd$sd`)
-traits3$ID <- paste(traits3$siteID, traits3$species, traits3$trait, sep = "_")
+traits3 <- cbind(traits1, traits1l$n_obs, traits1sd$sd)
+traits3 <- rename(traits3, n_obs = `traits1l$n_obs`, sd = `traits1sd$sd`)
+traits3$ID <- paste(traits3$siteID, traits3$blockID, traits3$species, traits3$trait, sep = "_")
 traits3C <- filter(traits3, warming == "C") # Control
 traits3OTC <- filter(traits3, warming == "W") # Warming
 
 traits3C <- traits3C %>% rename(C_mean = mean_value, C_n = n_obs, C_sd = sd) %>% select(-c(warming))
 traits3OTC <- traits3OTC %>% rename(OTC_mean = mean_value, OTC_n = n_obs, OTC_sd = sd) %>%
-  select(-c(siteID, species, warming, trait))
+  select(-c(siteID, traits3$blockID, species, warming, trait))
 
 traits4 <- full_join(traits3C, traits3OTC, by = "ID")
 traits4 <- select(traits4, -c(ID))
@@ -85,7 +85,7 @@ traits4$PR <- (traits4$OTC_mean - traits4$C_mean) / traits4$C_mean # Relative Di
 
 rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
-
+# 835 SES values, grouped by block and site, 
 # Task: compute p-values for the mean differences to see which are significant
 
 # Plotting SES values: Boxplots
