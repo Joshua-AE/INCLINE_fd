@@ -13,16 +13,15 @@ library("ggplot2")
 library("gghalves")
 ```
 
-# Hi Joe
 # Re-arranging data frame and computing Cohen's d
 ```{r}
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf) # updated version of this file has leaf area and SLA of Avenella flexuosa, Festuca vivipara, Nardus stricta, Festuca ovin and Festuca rubra doubled
 
 # OLD LEAF CHEMICAL TRAIT DATASET
-chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
+#chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
 
 # New chem traits table has 131 more c_n, 147 more d15n, 131 more of c_percent and n_percent, no change in d13c and p_percent
-new_chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022_new.txt", guess_max = Inf)
+chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022_new.txt", guess_max = Inf)
 chem_traits$merged <- case_when(str_detect(chem_traits$ID_merged, "_") == TRUE ~ "merged") # updates 'merged' column to flag all merged samples
 # I checked that only samples were merged from the same site, block and treatment
 traits <- raw_traits %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
@@ -37,7 +36,7 @@ test <- as.data.frame(table(traits$trait))
 selected_sp <- traits %>% select(siteID, warming, species) %>% unique() %>% group_by(species) %>% mutate(Freq = n()) %>%
                filter(Freq >= 4 & species != "Achillea millefolium") # filtering species we have samples for in C and W for each site. n = 13. 2 sites n = 17. Not included is Achillea millefolium because it has warming samples only in Gud
 selected_sp <- unique(selected_sp$species)
-#traits <- traits %>% filter(species %in% selected_sp) # trait set with only 13 selected species. 37.3 % of data omitted
+traits <- traits %>% filter(species %in% selected_sp) # trait set with only 17 selected species. xx.x % of data omitted
 rm(test, chem_traits, raw_traits, selected_sp)
 
 # aggregated by site, block and experiment____________________________________________________________________________
@@ -58,15 +57,15 @@ traits2sd <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(var))
 traits2sd$x <- sqrt(traits2sd$x)
 traits2sd <- rename(traits2sd, sd = x)
 
-traits3 <- cbind(traits1, traits1l$n_obs, traits1sd$sd)
-traits3 <- rename(traits3, n_obs = `traits1l$n_obs`, sd = `traits1sd$sd`)
-traits3$ID <- paste(traits3$siteID, traits3$blockID, traits3$species, traits3$trait, sep = "_")
+traits3 <- cbind(traits2, traits2l$n_obs, traits2sd$sd)
+traits3 <- rename(traits3, n_obs = `traits2l$n_obs`, sd = `traits2sd$sd`)
+traits3$ID <- paste(traits3$siteID, traits3$species, traits3$trait, sep = "_")
 traits3C <- filter(traits3, warming == "C") # Control
 traits3OTC <- filter(traits3, warming == "W") # Warming
 
 traits3C <- traits3C %>% rename(C_mean = mean_value, C_n = n_obs, C_sd = sd) %>% select(-c(warming))
 traits3OTC <- traits3OTC %>% rename(OTC_mean = mean_value, OTC_n = n_obs, OTC_sd = sd) %>%
-  select(-c(siteID, blockID, species, warming, trait))
+  select(-c(siteID, species, warming, trait))
 
 traits4 <- full_join(traits3C, traits3OTC, by = "ID")
 traits4 <- select(traits4, -c(ID))
@@ -94,7 +93,14 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 ```{r}
 n_obs <- traits4 %>% filter(!is.na(SES)) %>% group_by(siteID, trait) %>% mutate(n_obs = n()) %>%
                      sample_n(1) %>% select(siteID, trait, n_obs)
-SES_sites <- traits4 %>% select(c(1,3:4,15)) %>% na.omit()
+
+species_SES_table <- traits4 %>% filter(!is.na(SES)) %>% group_by(species, trait) %>%
+                     mutate(mean_SES = mean(SES)) %>% select(species, trait, mean_SES) %>% sample_n(1) %>% pivot_wider(names_from = trait, values_from = mean_SES)
+
+height_table <- traits4 %>% filter(!is.na(SES) & trait == "plant_height_cm") %>% select(siteID, species, SES) %>%
+                pivot_wider(names_from = siteID, values_from = SES) %>% relocate(species, Ulvehaugen, Gudmedalen, Skjelingahaugen)
+
+SES_sites <- traits4 %>% select(siteID, species, trait, SES) %>% na.omit()
 
 SES_sites$trait <- case_when(SES_sites$trait == "leaf_area_cm2" ~ "LA", SES_sites$trait == "leaf_thickness_mm" ~ "LTH", SES_sites$trait == "sla_cm2_g" ~ "SLA", SES_sites$trait == "plant_height_cm" ~ "H", SES_sites$trait == "ldmc" ~ "LDMC", SES_sites$trait == "c_n" ~ "C/N", SES_sites$trait == "c_percent" ~ "C %", SES_sites$trait == "d13c" ~ "D13C", SES_sites$trait == "d15n" ~ "D15N", SES_sites$trait == "n_percent" ~ "N %")
 
@@ -123,7 +129,7 @@ panel_plots <- ggplot(SES_combined, aes(x = siteID, y = SES, fill = siteID)) +
   geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
   geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
   stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "black", linewidth = 1) +
-  ylim(-5,5) + # otherwise ylim(-2.5,2.5)
+  ylim(-2.5,2.5) + # otherwise ylim(-5,5)
   facet_wrap(~ trait, scales = "free", ncol = 2) + # Facet by trait
   scale_fill_brewer(palette = "Set2") + # Optional color palette
   theme_classic() +
