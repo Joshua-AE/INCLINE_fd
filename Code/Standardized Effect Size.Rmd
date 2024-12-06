@@ -10,6 +10,7 @@ output: html_document
 library("tidyverse")
 library("ie2misc") # madstat mean absolute deviation
 library("ggplot2")
+library("gghalves")
 ```
 
 # Hi Joe
@@ -33,7 +34,8 @@ chem_traits <- chem_traits %>% ungroup() %>% select(c(siteID, blockID, warming, 
 
 traits <- rbind(traits, chem_traits)
 test <- as.data.frame(table(traits$trait))
-selected_sp <- traits %>% select(siteID, warming, species) %>% unique() %>% group_by(species) %>% mutate(Freq = n()) #%>% filter(Freq == 6) # filtering species we have samples for in C and W for each site. n = 13. 2 sites n = 17
+selected_sp <- traits %>% select(siteID, warming, species) %>% unique() %>% group_by(species) %>% mutate(Freq = n()) %>%
+               filter(Freq >= 4 & species != "Achillea millefolium") # filtering species we have samples for in C and W for each site. n = 13. 2 sites n = 17. Not included is Achillea millefolium because it has warming samples only in Gud
 selected_sp <- unique(selected_sp$species)
 #traits <- traits %>% filter(species %in% selected_sp) # trait set with only 13 selected species. 37.3 % of data omitted
 rm(test, chem_traits, raw_traits, selected_sp)
@@ -64,7 +66,7 @@ traits3OTC <- filter(traits3, warming == "W") # Warming
 
 traits3C <- traits3C %>% rename(C_mean = mean_value, C_n = n_obs, C_sd = sd) %>% select(-c(warming))
 traits3OTC <- traits3OTC %>% rename(OTC_mean = mean_value, OTC_n = n_obs, OTC_sd = sd) %>%
-  select(-c(siteID, traits3$blockID, species, warming, trait))
+  select(-c(siteID, blockID, species, warming, trait))
 
 traits4 <- full_join(traits3C, traits3OTC, by = "ID")
 traits4 <- select(traits4, -c(ID))
@@ -85,23 +87,24 @@ traits4$PR <- (traits4$OTC_mean - traits4$C_mean) / traits4$C_mean # Relative Di
 
 rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
-# 835 SES values, grouped by block and site, 
+# 835 SES values, grouped by block and site, we ight overestimate effect sizes due to low sample size per block. Number of paired observations more unbalanced based on blockID, much lower sample size for chem traits than leaf traits
 # Task: compute p-values for the mean differences to see which are significant
 
 # Plotting SES values: Boxplots
 ```{r}
 n_obs <- traits4 %>% filter(!is.na(SES)) %>% group_by(siteID, trait) %>% mutate(n_obs = n()) %>%
                      sample_n(1) %>% select(siteID, trait, n_obs)
-SES_sites <- traits4 %>% select(c(1:3,5,8,14)) %>% na.omit()
+SES_sites <- traits4 %>% select(c(1,3:4,15)) %>% na.omit()
 
 SES_sites$trait <- case_when(SES_sites$trait == "leaf_area_cm2" ~ "LA", SES_sites$trait == "leaf_thickness_mm" ~ "LTH", SES_sites$trait == "sla_cm2_g" ~ "SLA", SES_sites$trait == "plant_height_cm" ~ "H", SES_sites$trait == "ldmc" ~ "LDMC", SES_sites$trait == "c_n" ~ "C/N", SES_sites$trait == "c_percent" ~ "C %", SES_sites$trait == "d13c" ~ "D13C", SES_sites$trait == "d15n" ~ "D15N", SES_sites$trait == "n_percent" ~ "N %")
 
+#_______________________________________________________________________________ violin plots for all traits and across sites
 multi_bp <- ggplot(SES_sites, aes(x = trait, y = SES, group = trait)) + geom_violin(aes(fill = trait), trim = T) +
-  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) + ylim(-2.5,2) + stat_summary(fun.data = "mean_cl_boot", geom = "pointrange",
-               colour = "black")
+  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) + stat_summary(fun.data = "mean_cl_boot", geom = "pointrange",
+               colour = "black") + ylim(-2.5,2.5) + geom_jitter(color = "black", height = NULL, width = 0.3, alpha = 0.1)
 # + geom_boxplot(aes(fill = trait), outlier.alpha = 0)
-# + geom_jitter(color = "black", height = NULL, width = 0.3, alpha = 0.5)
 
+#_______________________________________________________________________________ violin plots for all traits and across sites but with mean values for species
 SES_sites <- aggregate(SES_sites$SES, by = SES_sites[,c(2,3)], FUN = mean)
 SES_sites <- SES_sites %>% rename(`mean SES` = x)
 
@@ -110,6 +113,30 @@ multi_bp <- ggplot(SES_sites, aes(x = trait, y = `mean SES`, group = trait)) +
   theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
   geom_jitter(color = "black", height = NULL, width = 0.3, alpha = 0.5) + ylim(-2.5,2)
 
+#_______________________________________________________________________________ violin plots in panels, global vs each site
+data_all_sites <- SES_sites %>% mutate(siteID = "All Sites")
+SES_combined <- bind_rows(SES_sites, data_all_sites)
+SES_combined <- SES_combined %>% mutate(siteID = factor(siteID, levels = c("All Sites", "Ulvehaugen", "Gudmedalen", "Skjelingahaugen")))
+
+panel_plots <- ggplot(SES_combined, aes(x = siteID, y = SES, fill = siteID)) +
+  geom_half_violin(side = "l", trim = TRUE, colour = NA) +
+  geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
+  geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "black", linewidth = 1) +
+  ylim(-5,5) + # otherwise ylim(-2.5,2.5)
+  facet_wrap(~ trait, scales = "free", ncol = 2) + # Facet by trait
+  scale_fill_brewer(palette = "Set2") + # Optional color palette
+  theme_classic() +
+  labs(
+    title = "Effect of warming on intraspecific trait values",
+    x = "Site, precipitation 1300 mm, 2100 mm, 3600 mm",
+    y = "Standardized effect size (Cohen's d)"
+  ) +
+  theme(
+    legend.position = "none", # Remove legend
+    strip.text = element_text(size = 10, face = "bold") # Style facet labels
+  )
+# print 1000 x 1200
 ```
 
 # Plotting SES values
