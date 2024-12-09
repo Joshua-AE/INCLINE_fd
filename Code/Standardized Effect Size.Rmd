@@ -84,47 +84,54 @@ traits4$SES <- (traits4$OTC_mean - traits4$C_mean) / traits4$pooled_SD # Cohen's
 
 traits4$PR <- (traits4$OTC_mean - traits4$C_mean) / traits4$C_mean # Relative Distance Plasticity Index: shows the factor by which the trait value in the OTC increased or decreased, in comparison to the control plot
 
+traits4$trait <- case_when(traits4$trait == "leaf_area_cm2" ~ "LA", traits4$trait == "leaf_thickness_mm" ~ "LTH", traits4$trait == "sla_cm2_g" ~ "SLA", traits4$trait == "plant_height_cm" ~ "H", traits4$trait == "ldmc" ~ "LDMC", traits4$trait == "c_n" ~ "C/N", traits4$trait == "c_percent" ~ "C %", traits4$trait == "d13c" ~ "D13C", traits4$trait == "d15n" ~ "D15N", traits4$trait == "n_percent" ~ "N %")
+
 rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
 # 835 SES values, grouped by block and site, we ight overestimate effect sizes due to low sample size per block. Number of paired observations more unbalanced based on blockID, much lower sample size for chem traits than leaf traits
 # Task: compute p-values for the mean differences to see which are significant
 
+#Species trait tables
+```{r}
+#n_obs <- traits4 %>% filter(!is.na(SES)) %>% group_by(siteID, trait) %>% mutate(n_obs = n()) %>% sample_n(1) %>% select(siteID, trait, n_obs)
+
+#species_SES_table <- traits4 %>% filter(!is.na(SES)) %>% group_by(species, trait) %>%
+#                     mutate(mean_SES = mean(SES)) %>% select(species, trait, mean_SES) %>% sample_n(1) %>% pivot_wider(names_from = trait, values_from = mean_SES)
+
+sp_tables <- traits4 %>% filter(!is.na(SES)) %>% select(siteID, species, trait, SES) 
+
+data_all_sites <- sp_tables %>% mutate(siteID = "overall") %>% group_by(species, trait) %>% mutate(SES = mean(SES)) %>% sample_n(1) %>% ungroup()
+sp_tables <- sp_tables %>% bind_rows(data_all_sites)
+sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "1315", sp_tables$siteID == "Gudmedalen" ~ "2118",
+                                 sp_tables$siteID == "Skjelingahaugen" ~ "3601", sp_tables$siteID == "overall" ~ "overall")
+sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("1315", "2118", "3601", "overall"))) %>% select(-c(siteID))
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
+
+rm(data_all_sites)
+
+table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
+  scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
+  scale_size_continuous(range = c(1,10), breaks = c(0.1, 1, 2, 3)) + theme_classic() + # c(1, 4, 7, 10)
+  scale_y_discrete(limits = rev(levels(sp_tables$species))) +
+  labs(title = NULL, x = "Precipitation [mm]", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) + theme(legend.position = "top") +
+  geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
+  facet_wrap(~ trait, scales = "free", ncol = 5) + annotate("text", x = 4.4, y = 7.5, label = "alpine", angle = 90, size = 4) +
+  annotate("text", x = 4.4, y = 2, label = "generalist", angle = 90, size = 4)
+
+# print 1600 x 1000
+```
+
 # Plotting SES values: Boxplots
 ```{r}
-n_obs <- traits4 %>% filter(!is.na(SES)) %>% group_by(siteID, trait) %>% mutate(n_obs = n()) %>%
-                     sample_n(1) %>% select(siteID, trait, n_obs)
-
-species_SES_table <- traits4 %>% filter(!is.na(SES)) %>% group_by(species, trait) %>%
-                     mutate(mean_SES = mean(SES)) %>% select(species, trait, mean_SES) %>% sample_n(1) %>% pivot_wider(names_from = trait, values_from = mean_SES)
-
-height_table <- traits4 %>% filter(!is.na(SES) & trait == "plant_height_cm") %>% select(siteID, species, SES) %>%
-                pivot_wider(names_from = siteID, values_from = SES) %>% relocate(species, Ulvehaugen, Gudmedalen, Skjelingahaugen)
-
 SES_sites <- traits4 %>% select(siteID, species, trait, SES) %>% na.omit()
 
-SES_sites$trait <- case_when(SES_sites$trait == "leaf_area_cm2" ~ "LA", SES_sites$trait == "leaf_thickness_mm" ~ "LTH", SES_sites$trait == "sla_cm2_g" ~ "SLA", SES_sites$trait == "plant_height_cm" ~ "H", SES_sites$trait == "ldmc" ~ "LDMC", SES_sites$trait == "c_n" ~ "C/N", SES_sites$trait == "c_percent" ~ "C %", SES_sites$trait == "d13c" ~ "D13C", SES_sites$trait == "d15n" ~ "D15N", SES_sites$trait == "n_percent" ~ "N %")
+SES_sites$precip <- case_when(SES_sites$siteID == "Ulvehaugen" ~ "1315", SES_sites$siteID == "Gudmedalen" ~ "2118", SES_sites$siteID == "Skjelingahaugen" ~ "3601")
 
-#_______________________________________________________________________________ violin plots for all traits and across sites
-multi_bp <- ggplot(SES_sites, aes(x = trait, y = SES, group = trait)) + geom_violin(aes(fill = trait), trim = T) +
-  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) + stat_summary(fun.data = "mean_cl_boot", geom = "pointrange",
-               colour = "black") + ylim(-2.5,2.5) + geom_jitter(color = "black", height = NULL, width = 0.3, alpha = 0.1)
-# + geom_boxplot(aes(fill = trait), outlier.alpha = 0)
-
-#_______________________________________________________________________________ violin plots for all traits and across sites but with mean values for species
-SES_sites <- aggregate(SES_sites$SES, by = SES_sites[,c(2,3)], FUN = mean)
-SES_sites <- SES_sites %>% rename(`mean SES` = x)
-
-multi_bp <- ggplot(SES_sites, aes(x = trait, y = `mean SES`, group = trait)) +
-  geom_boxplot(aes(fill = trait), outlier.alpha = 0) +
-  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
-  geom_jitter(color = "black", height = NULL, width = 0.3, alpha = 0.5) + ylim(-2.5,2)
-
-#_______________________________________________________________________________ violin plots in panels, global vs each site
-data_all_sites <- SES_sites %>% mutate(siteID = "All Sites")
+data_all_sites <- SES_sites %>% mutate(precip = "overall")
 SES_combined <- bind_rows(SES_sites, data_all_sites)
-SES_combined <- SES_combined %>% mutate(siteID = factor(siteID, levels = c("All Sites", "Ulvehaugen", "Gudmedalen", "Skjelingahaugen")))
+SES_combined <- SES_combined %>% mutate(precip = factor(precip, levels = c("1315", "2118", "3601", "overall")))
 
-panel_plots <- ggplot(SES_combined, aes(x = siteID, y = SES, fill = siteID)) +
+panel_plots <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   geom_half_violin(side = "l", trim = TRUE, colour = NA) +
   geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
   geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
@@ -134,15 +141,30 @@ panel_plots <- ggplot(SES_combined, aes(x = siteID, y = SES, fill = siteID)) +
   scale_fill_brewer(palette = "Set2") + # Optional color palette
   theme_classic() +
   labs(
-    title = "Effect of warming on intraspecific trait values",
-    x = "Site, precipitation 1300 mm, 2100 mm, 3600 mm",
-    y = "Standardized effect size (Cohen's d)"
+    title = NULL,
+    x = "Precipitation [mm]",
+    y = "Standardized effect size [Cohen's d]"
   ) +
   theme(
-    legend.position = "none", # Remove legend
+    legend.position = "none",
     strip.text = element_text(size = 10, face = "bold") # Style facet labels
   )
 # print 1000 x 1200
+
+#_______________________________________________________________________________ violin plots for all traits and across sites
+#multi_bp <- ggplot(SES_sites, aes(x = trait, y = SES, group = trait)) + geom_violin(aes(fill = trait), trim = T) +
+#  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) + stat_summary(fun.data = "mean_cl_boot", geom = "pointrange",
+#               colour = "black") + ylim(-2.5,2.5) + geom_jitter(color = "black", height = NULL, width = 0.3, alpha = 0.1)
+# + geom_boxplot(aes(fill = trait), outlier.alpha = 0)
+
+#_______________________________________________________________________________ violin plots for all traits and across sites but with mean values for species
+#SES_sites <- aggregate(SES_sites$SES, by = SES_sites[,c(2,3)], FUN = mean)
+#SES_sites <- SES_sites %>% rename(`mean SES` = x)
+
+#multi_bp <- ggplot(SES_sites, aes(x = trait, y = `mean SES`, group = trait)) +
+#  geom_boxplot(aes(fill = trait), outlier.alpha = 0) +
+#  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
+#  geom_jitter(color = "black", height = NULL, width = 0.3, alpha = 0.5) + ylim(-2.5,2)
 ```
 
 # Plotting SES values
