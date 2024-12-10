@@ -98,7 +98,7 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 #species_SES_table <- traits4 %>% filter(!is.na(SES)) %>% group_by(species, trait) %>%
 #                     mutate(mean_SES = mean(SES)) %>% select(species, trait, mean_SES) %>% sample_n(1) %>% pivot_wider(names_from = trait, values_from = mean_SES)
 
-sp_tables <- traits4 %>% filter(!is.na(SES)) %>% select(siteID, species, trait, SES) 
+sp_tables <- traits4 %>% filter(!is.na(SES)) %>% select(siteID, species, trait, SES) %>% filter(trait != "C/N")
 
 data_all_sites <- sp_tables %>% mutate(siteID = "overall") %>% group_by(species, trait) %>% mutate(SES = mean(SES)) %>% sample_n(1) %>% ungroup()
 sp_tables <- sp_tables %>% bind_rows(data_all_sites)
@@ -111,12 +111,12 @@ rm(data_all_sites)
 
 table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
-  scale_size_continuous(range = c(1,10), breaks = c(0.1, 1, 2, 3)) + theme_classic() + # c(1, 4, 7, 10)
+  scale_size_continuous(range = c(0.5,7), breaks = c(0.1, 1, 2, 3)) + theme_classic() + # c(1, 10)
   scale_y_discrete(limits = rev(levels(sp_tables$species))) +
   labs(title = NULL, x = "Precipitation [mm]", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) + theme(legend.position = "top") +
   geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
-  facet_wrap(~ trait, scales = "free", ncol = 5) + annotate("text", x = 4.4, y = 7.5, label = "alpine", angle = 90, size = 4) +
-  annotate("text", x = 4.4, y = 2, label = "generalist", angle = 90, size = 4)
+  facet_wrap(~ trait, scales = "free", ncol = 3) + annotate("text", x = 4.3, y = 8, label = "alpine", angle = 90, size = 4) + # before: x = 4.4, y = 7.5
+  annotate("text", x = 4.3, y = 2.5, label = "generalist", angle = 90, size = 4) # before: x = 4.4, y = 2
 
 # print 1600 x 1000
 ```
