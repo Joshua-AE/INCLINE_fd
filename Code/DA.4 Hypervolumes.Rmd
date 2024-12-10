@@ -38,32 +38,37 @@ chem_traits <- chem_traits %>% ungroup() %>% select(c(siteID, blockID, warming, 
 
 traits <- rbind(traits, chem_traits)
 test <- as.data.frame(table(traits$trait))
-rm(test, chem_traits, raw_traits)
+
+selected_sp <- traits %>% select(siteID, warming, species) %>% unique() %>% group_by(species) %>% mutate(Freq = n()) %>%
+               filter(Freq >= 4 & species != "Achillea millefolium") # filtering species we have samples for in C and W for each site. n = 13. 2 sites n = 17. Not included is Achillea millefolium because it has warming samples only in Gud
+selected_sp <- unique(selected_sp$species)
+traits <- traits %>% filter(species %in% selected_sp) # trait set with only 17 selected species. xx.x % of data omitted
+
+rm(test, chem_traits, raw_traits, selected_sp)
 ```
 
 # Select which dataset to analyse. Skip to analyze both
 # 10 traits are too much. We have to separat growth and leaf traits from chemical traits
 ```{r}
-trait_i <- traits %>% filter(trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>% group_by(siteID, blockID, warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value) %>% na.omit() # group_by(siteID, blockID, warming, species, trait) 
-# 
+trait_i <- traits %>% filter(trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>% group_by(siteID, blockID, warming, species, trait) %>% summarise(mean_value = mean(value, na.rm = TRUE)) %>% pivot_wider(names_from = trait, values_from = mean_value) %>% na.omit() 
+# "c_n", "c_percent", "d15n", "n_percent", "d13c"
 
+# Optional: Select different sites and create PCAs for each site
+trait_i <- trait_i %>% filter(siteID == "Skjelingahaugen") %>% ungroup() # precipitation: Ulvehaugen < Gudmedalen < Skjelingahaugen
 
-#trait_i <- trait_i %>% ungroup() %>% left_join(as.data.frame(table(trait_i$species)), by = c("species" = "Var1")) %>% filter(Freq == 2)
-
-#trait_i <- filter(trait_i, warming == "W")
-
-# sqrt() or log10() for traits that are right-skewed (positive skew)
-# leaf area, leaf thickness, plant height, c_n, sla(?) sqrt transform
-trait_i[,c(6:8)] <- log10(trait_i[,c(6:8)]) #
-
-pairs.panels(trait_i[,c(5:9)], smooth = TRUE, ellipse = FALSE, method = "pearson", hist.col = 4, stars = TRUE, cex = 4)
+pairs.panels(trait_i[,c(5:9)], smooth = TRUE, ellipse = FALSE, method = "pearson", hist.col = 4, stars = TRUE, cex = 1)
 # most correlated with other traits are: cn > sla > ldmc > h
+# sqrt() or log10() for traits that are right-skewed (positive skew)
+trait_i[,c(6:9)] <- log10(trait_i[,c(6:9)]) # leaf area, leaf thickness, plant height, c_n, sla(?) sqrt transform
+
 pca1 <- prcomp(trait_i[5:9], center = T, scale = T)
 pcomp1 <- as.data.frame(pca1$rotation)
 summary(pca1)
 
 fviz_pca_biplot(pca1, axes = c(1,2), geom = "point", repel = TRUE, col.var = "#2E9FDF", col.ind = "#696969", xlim = c(-5,5), ylim = c(-5,5), habillage = trait_i$warming,
-             addEllipses = TRUE, ellipse.level = 0.95) # print 600 x 400
+             addEllipses = TRUE, ellipse.level = 0.95) + scale_color_manual(values=c("#2E9FDF", "red")) + scale_fill_manual(values=c("#2E9FDF", "red")) +
+             labs(title = "PCA")
+# print 600 x 400
 
 #traits <- traits %>% filter(trait %in% c("c_percent", "n_percent", "d15n", "d13c")) # only chem traits except C/N ratio, which is linearly correlated with N %. The other 4 traits are independent of each other.
 # Vaccinium vitis-idaea and Vaccinium myrtillus lack d13c measurements.
