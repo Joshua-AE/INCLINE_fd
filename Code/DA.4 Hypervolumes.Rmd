@@ -26,7 +26,7 @@ library("doFuture")
 # colnames in comm and rownames in trait have to match!
 
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf) # updated version of this file has leaf area and SLA of Avenella flexuosa, Festuca vivipara, Nardus stricta, Festuca ovin and Festuca rubra doubled
-chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
+chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022_new.txt", guess_max = Inf)
 chem_traits$merged <- case_when(str_detect(chem_traits$ID_merged, "_") == TRUE ~ "merged") # updates 'merged' column to flag all merged samples
 # I checked that only samples were merged from the same site, block and treatment
 traits <- raw_traits %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
@@ -62,7 +62,8 @@ pca1 <- prcomp(trait_i[5:9], center = T, scale = T)
 pcomp1 <- as.data.frame(pca1$rotation)
 summary(pca1)
 
-fviz_pca_biplot(pca1, axes = c(1,2), geom = "point", repel = TRUE, col.var = "#2E9FDF", col.ind = "#696969", xlim = c(-5,5), ylim = c(-5,5)) # print 600 x 400
+fviz_pca_biplot(pca1, axes = c(1,2), geom = "point", repel = TRUE, col.var = "#2E9FDF", col.ind = "#696969", xlim = c(-5,5), ylim = c(-5,5), habillage = trait_i$warming,
+             addEllipses = TRUE, ellipse.level = 0.95) # print 600 x 400
 
 #traits <- traits %>% filter(trait %in% c("c_percent", "n_percent", "d15n", "d13c")) # only chem traits except C/N ratio, which is linearly correlated with N %. The other 4 traits are independent of each other.
 # Vaccinium vitis-idaea and Vaccinium myrtillus lack d13c measurements.
