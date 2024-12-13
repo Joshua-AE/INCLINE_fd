@@ -88,7 +88,7 @@ traits4$trait <- case_when(traits4$trait == "leaf_area_cm2" ~ "LA", traits4$trai
 
 rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
-# 835 SES values, grouped by block and site, we ight overestimate effect sizes due to low sample size per block. Number of paired observations more unbalanced based on blockID, much lower sample size for chem traits than leaf traits
+# 835 SES values, grouped by block and site, we might overestimate effect sizes due to low sample size per block. Number of paired observations more unbalanced based on blockID, much lower sample size for chem traits than leaf traits
 # Task: compute p-values for the mean differences to see which are significant
 
 #Species trait tables
@@ -98,7 +98,11 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 #species_SES_table <- traits4 %>% filter(!is.na(SES)) %>% group_by(species, trait) %>%
 #                     mutate(mean_SES = mean(SES)) %>% select(species, trait, mean_SES) %>% sample_n(1) %>% pivot_wider(names_from = trait, values_from = mean_SES)
 
-sp_tables <- traits4 %>% filter(!is.na(SES)) %>% select(siteID, species, trait, SES) %>% filter(trait != "C/N")
+# First, removing outlier values that are further than 3 sd away from the mean. One D15N, one C% and one D13C observation
+trait_SES_table <- traits4 %>% filter(SES <= 3 & SES >= -3) %>% group_by(trait) %>% mutate(meanSES = mean(SES), absSES = mean(abs(SES)), nsamples = n()) %>%
+                   sample_n(1) %>% ungroup() %>% select(c(trait, meanSES, absSES, nsamples))
+
+sp_tables <- traits4 %>% filter(!is.na(SES)) %>% select(siteID, species, trait, SES) #%>% filter(trait != "C/N")
 
 data_all_sites <- sp_tables %>% mutate(siteID = "overall") %>% group_by(species, trait) %>% mutate(SES = mean(SES)) %>% sample_n(1) %>% ungroup()
 sp_tables <- sp_tables %>% bind_rows(data_all_sites)
@@ -126,29 +130,29 @@ table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
 SES_sites <- traits4 %>% select(siteID, species, trait, SES) %>% na.omit()
 
 SES_sites$precip <- case_when(SES_sites$siteID == "Ulvehaugen" ~ "1315", SES_sites$siteID == "Gudmedalen" ~ "2118", SES_sites$siteID == "Skjelingahaugen" ~ "3601")
+SES_sites <- SES_sites %>% filter(SES <= 3 & SES >= -3) # removing outlier values that are further than 3 sd away from the mean. One D15N, one C% and one D13C observation
 
 data_all_sites <- SES_sites %>% mutate(precip = "overall")
 SES_combined <- bind_rows(SES_sites, data_all_sites)
 SES_combined <- SES_combined %>% mutate(precip = factor(precip, levels = c("1315", "2118", "3601", "overall")))
 
+SES_mean <- SES_combined %>% group_by(precip, trait) %>% summarize(mean_SES = mean(SES), .groups = "drop")
+
 panel_plots <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   geom_half_violin(side = "l", trim = TRUE, colour = NA) +
   geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
   geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
+  geom_text(data = SES_mean, aes(x = precip, y = mean_SES, label = round(mean_SES, 2)), y = 2,
+    vjust = -1, # Adjust vertical position
+    size = 3.5) +
   stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "black", linewidth = 1) +
-  ylim(-2.5,2.5) + # otherwise ylim(-5,5)
   facet_wrap(~ trait, scales = "free", ncol = 2) + # Facet by trait
   scale_fill_brewer(palette = "Set2") + # Optional color palette
   theme_classic() +
-  labs(
-    title = NULL,
-    x = "Precipitation [mm]",
-    y = "Standardized effect size [Cohen's d]"
-  ) +
-  theme(
-    legend.position = "none",
-    strip.text = element_text(size = 10, face = "bold") # Style facet labels
-  )
+  labs(title = NULL, x = "Precipitation [mm]", y = "Standardized effect size [Cohen's d]") +
+  theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12)) +
+  ylim(-3, 3) # otherwise ylim(-5,5)
+# scale_y_continuous(breaks = c(-3, -2, -1, 0, 1, 2, 3)) +
 # print 1000 x 1200
 
 #_______________________________________________________________________________ violin plots for all traits and across sites
