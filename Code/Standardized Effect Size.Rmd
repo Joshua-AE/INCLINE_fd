@@ -98,6 +98,12 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 #species_SES_table <- traits4 %>% filter(!is.na(SES)) %>% group_by(species, trait) %>%
 #                     mutate(mean_SES = mean(SES)) %>% select(species, trait, mean_SES) %>% sample_n(1) %>% pivot_wider(names_from = trait, values_from = mean_SES)
 
+test <- traits4 %>% filter(!is.na(SES)) %>% group_by(trait) %>% mutate(trait_mean = mean(SES), trait_sd = sd(SES))
+test$outlier2 <- case_when(test$SES <= test$trait_mean - 2* test$trait_sd ~ "low", test$SES >= test$trait_mean + 2* test$trait_sd ~ "high")
+test$outlier3 <- case_when(test$SES <= test$trait_mean - 3* test$trait_sd ~ "low", test$SES >= test$trait_mean + 3* test$trait_sd ~ "high")
+test$`outlier2.5` <- case_when(test$SES <= test$trait_mean - 2.5* test$trait_sd ~ "low", test$SES >= test$trait_mean + 2.5* test$trait_sd ~ "high")
+# 18 SES values removed with 2sd threshold for each trait. 13 removed for 2sd threshold overall and 3 removed for 3sd threshold overall. 6 for 2.5 sd overall
+
 # First, removing outlier values that are further than 3 sd away from the mean. One D15N, one C% and one D13C observation
 trait_SES_table <- traits4 %>% filter(SES <= 3 & SES >= -3) %>% group_by(trait) %>% mutate(meanSES = mean(SES), absSES = mean(abs(SES)), nsamples = n()) %>%
                    sample_n(1) %>% ungroup() %>% select(c(trait, meanSES, absSES, nsamples))
