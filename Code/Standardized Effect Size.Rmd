@@ -98,17 +98,15 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 #species_SES_table <- traits4 %>% filter(!is.na(SES)) %>% group_by(species, trait) %>%
 #                     mutate(mean_SES = mean(SES)) %>% select(species, trait, mean_SES) %>% sample_n(1) %>% pivot_wider(names_from = trait, values_from = mean_SES)
 
-test <- traits4 %>% filter(!is.na(SES)) %>% group_by(trait) %>% mutate(trait_mean = mean(SES), trait_sd = sd(SES))
-test$outlier2 <- case_when(test$SES <= test$trait_mean - 2* test$trait_sd ~ "low", test$SES >= test$trait_mean + 2* test$trait_sd ~ "high")
-test$outlier3 <- case_when(test$SES <= test$trait_mean - 3* test$trait_sd ~ "low", test$SES >= test$trait_mean + 3* test$trait_sd ~ "high")
-test$`outlier2.5` <- case_when(test$SES <= test$trait_mean - 2.5* test$trait_sd ~ "low", test$SES >= test$trait_mean + 2.5* test$trait_sd ~ "high")
-# 18 SES values removed with 2sd threshold for each trait. 13 removed for 2sd threshold overall and 3 removed for 3sd threshold overall. 6 for 2.5 sd overall
+traits_f <- traits4 %>% filter(!is.na(SES)) %>% group_by(trait) %>% mutate(trait_mean = mean(SES), trait_sd = sd(SES)) # trait table filtered
+traits_f$outlier3 <- case_when(traits_f$SES <= traits_f$trait_mean - 3* traits_f$trait_sd ~ "low",
+                               traits_f$SES >= traits_f$trait_mean + 3* traits_f$trait_sd ~ "high") # 6 outliers +- 3 sd away from the mean removed
+traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait_sd, outlier3))
 
-# First, removing outlier values that are further than 3 sd away from the mean. One D15N, one C% and one D13C observation
-trait_SES_table <- traits4 %>% filter(SES <= 3 & SES >= -3) %>% group_by(trait) %>% mutate(meanSES = mean(SES), absSES = mean(abs(SES)), nsamples = n()) %>%
+trait_SES_table <- traits_f  %>% group_by(trait) %>% mutate(meanSES = mean(SES), absSES = mean(abs(SES)), nsamples = n()) %>%
                    sample_n(1) %>% ungroup() %>% select(c(trait, meanSES, absSES, nsamples))
 
-sp_tables <- traits4 %>% filter(!is.na(SES)) %>% select(siteID, species, trait, SES) #%>% filter(trait != "C/N")
+sp_tables <- traits_f  %>% select(siteID, species, trait, SES) #%>% filter(trait != "C/N")
 
 data_all_sites <- sp_tables %>% mutate(siteID = "overall") %>% group_by(species, trait) %>% mutate(SES = mean(SES)) %>% sample_n(1) %>% ungroup()
 sp_tables <- sp_tables %>% bind_rows(data_all_sites)
@@ -121,11 +119,11 @@ rm(data_all_sites)
 
 table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
-  scale_size_continuous(range = c(0.5,7), breaks = c(0.1, 1, 2, 3)) + theme_classic() + # c(1, 10)
+  scale_size_continuous(range = c(0.5,8), breaks = c(0.1, 1, 2, 3)) + theme_classic() + # c(1, 10)
   scale_y_discrete(limits = rev(levels(sp_tables$species))) +
   labs(title = NULL, x = "Precipitation [mm]", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) + theme(legend.position = "top") +
   geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
-  facet_wrap(~ trait, scales = "free", ncol = 3) + annotate("text", x = 4.3, y = 8, label = "alpine", angle = 90, size = 4) + # before: x = 4.4, y = 7.5
+  facet_wrap(~ trait, scales = "free", ncol = 5) + annotate("text", x = 4.3, y = 8, label = "alpine", angle = 90, size = 4) + # before: x = 4.4, y = 7.5
   annotate("text", x = 4.3, y = 2.5, label = "generalist", angle = 90, size = 4) # before: x = 4.4, y = 2
 
 # print 1600 x 1000
@@ -133,10 +131,9 @@ table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
 
 # Plotting SES values: Boxplots
 ```{r}
-SES_sites <- traits4 %>% select(siteID, species, trait, SES) %>% na.omit()
+SES_sites <- traits_f %>% select(siteID, species, trait, SES)
 
 SES_sites$precip <- case_when(SES_sites$siteID == "Ulvehaugen" ~ "1315", SES_sites$siteID == "Gudmedalen" ~ "2118", SES_sites$siteID == "Skjelingahaugen" ~ "3601")
-SES_sites <- SES_sites %>% filter(SES <= 3 & SES >= -3) # removing outlier values that are further than 3 sd away from the mean. One D15N, one C% and one D13C observation
 
 data_all_sites <- SES_sites %>% mutate(precip = "overall")
 SES_combined <- bind_rows(SES_sites, data_all_sites)
@@ -157,8 +154,8 @@ panel_plots <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   theme_classic() +
   labs(title = NULL, x = "Precipitation [mm]", y = "Standardized effect size [Cohen's d]") +
   theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12)) +
-  ylim(-3, 3) # otherwise ylim(-5,5)
-# scale_y_continuous(breaks = c(-3, -2, -1, 0, 1, 2, 3)) +
+  ylim(-2.62, 2.62) # otherwise ylim(-5,5)
+
 # print 1000 x 1200
 
 #_______________________________________________________________________________ violin plots for all traits and across sites
