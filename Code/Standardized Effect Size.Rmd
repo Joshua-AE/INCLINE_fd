@@ -111,8 +111,6 @@ sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "1315", sp_tabl
 sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("1315", "2118", "3601", "overall"))) %>% select(-c(siteID))
 sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
 
-rm(data_all_sites)
-
 table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
   scale_size_continuous(range = c(0.5,8), breaks = c(0.1, 1, 2, 3)) + theme_classic() + # c(1, 10)
@@ -123,6 +121,7 @@ table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
   annotate("text", x = 4.3, y = 2.5, label = "generalist", angle = 90, size = 4) # before: x = 4.4, y = 2
 
 # print 1600 x 1000
+rm(sp_tables, data_all_sites)
 ```
 
 # Plotting SES values: Boxplots
