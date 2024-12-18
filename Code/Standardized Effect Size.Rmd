@@ -15,24 +15,20 @@ library("gghalves")
 
 # Re-arranging data frame and computing Cohen's d
 ```{r}
-raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf) # updated version of this file has leaf area and SLA of Avenella flexuosa, Festuca vivipara, Nardus stricta, Festuca ovin and Festuca rubra doubled
+raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
 
-# OLD LEAF CHEMICAL TRAIT DATASET
-#chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
-
-# New chem traits table has 131 more c_n, 147 more d15n, 131 more of c_percent and n_percent, no change in d13c and p_percent
 chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022_new.txt", guess_max = Inf)
-chem_traits$merged <- case_when(str_detect(chem_traits$ID_merged, "_") == TRUE ~ "merged") # updates 'merged' column to flag all merged samples
-# I checked that only samples were merged from the same site, block and treatment
+# AT THIS POINT, DECISION ON DUPLICATE VALUES HAS TO BE MADE: Currently, summarizing duplicate values into one mean per ID/ merged_ID
+chem_traits <- chem_traits %>% group_by(ID_merged, trait) %>% mutate(mean_value = mean(value)) %>% sample_n(1) 
+chem_traits <- chem_traits %>% ungroup() %>% select(c(siteID, blockID, warming, species, trait, mean_value)) %>% na.omit() %>%
+  filter(trait %in% c("c_percent", "n_percent", "c_n", "d15n", "d13c")) # no sample removed, but trait phosphorus percentage removed because of missing data
+
 traits <- raw_traits %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
   filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g")) # one sample removed: DLL3549
 
-chem_traits <- chem_traits %>% group_by(ID_merged, trait) %>% sample_n(1) # removes all duplicated samples
-chem_traits <- chem_traits %>% ungroup() %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
-  filter(trait %in% c("c_percent", "n_percent", "c_n", "d15n", "d13c")) # no sample removed, but trait phosphorus percentage removed because of missing data
-
+chem_traits <- rename(chem_traits, value = mean_value)
 traits <- rbind(traits, chem_traits)
-test <- as.data.frame(table(traits$trait))
+
 selected_sp <- traits %>% select(siteID, warming, species) %>% unique() %>% group_by(species) %>% mutate(Freq = n()) %>%
                filter(Freq >= 4 & species != "Achillea millefolium") # filtering species we have samples for in C and W for each site. n = 13. 2 sites n = 17. Not included is Achillea millefolium because it has warming samples only in Gud
 selected_sp <- unique(selected_sp$species)
