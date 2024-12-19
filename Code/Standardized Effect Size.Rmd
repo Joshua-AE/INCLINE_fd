@@ -91,13 +91,16 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 ```{r}
 #n_obs <- traits4 %>% filter(!is.na(SES)) %>% group_by(siteID, trait) %>% mutate(n_obs = n()) %>% sample_n(1) %>% select(siteID, trait, n_obs)
 
-#species_SES_table <- traits4 %>% filter(!is.na(SES)) %>% group_by(species, trait) %>%
-#                     mutate(mean_SES = mean(SES)) %>% select(species, trait, mean_SES) %>% sample_n(1) %>% pivot_wider(names_from = trait, values_from = mean_SES)
-
 traits_f <- traits4 %>% filter(!is.na(SES)) %>% group_by(trait) %>% mutate(trait_mean = mean(SES), trait_sd = sd(SES)) # trait table filtered
 traits_f$outlier3 <- case_when(traits_f$SES <= traits_f$trait_mean - 3* traits_f$trait_sd ~ "low",
                                traits_f$SES >= traits_f$trait_mean + 3* traits_f$trait_sd ~ "high") # 6 outliers +- 3 sd away from the mean removed
 traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait_sd, outlier3))
+
+species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES = mean(SES)) %>%
+  select(species, trait, mean_SES) %>% sample_n(1) %>%
+  pivot_wider(names_from = trait, values_from = mean_SES)
+species_SES_table$mean_overall <- rowMeans(abs(species_SES_table[,2:11]), na.rm = TRUE)
+data$new <- rowMeans(data[ , c(1,2)], na.rm=TRUE)
 
 trait_SES_table <- traits_f  %>% group_by(trait) %>% mutate(meanSES = mean(SES), absSES = mean(abs(SES)), nsamples = n()) %>%
                    sample_n(1) %>% ungroup() %>% select(c(trait, meanSES, absSES, nsamples))
