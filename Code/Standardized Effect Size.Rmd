@@ -16,17 +16,14 @@ library("gghalves")
 # Re-arranging data frame and computing Cohen's d
 ```{r}
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
+chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
 
-chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022_new.txt", guess_max = Inf)
-# AT THIS POINT, DECISION ON DUPLICATE VALUES HAS TO BE MADE: Currently, summarizing duplicate values into one mean per ID/ merged_ID
-chem_traits <- chem_traits %>% group_by(ID_merged, trait) %>% mutate(mean_value = mean(value)) %>% sample_n(1) 
-chem_traits <- chem_traits %>% ungroup() %>% select(c(siteID, blockID, warming, species, trait, mean_value)) %>% na.omit() %>%
+chem_traits <- chem_traits %>% group_by(ID_merged, trait) %>% sample_n(1) 
+chem_traits <- chem_traits %>% ungroup() %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
   filter(trait %in% c("c_percent", "n_percent", "c_n", "d15n", "d13c")) # no sample removed, but trait phosphorus percentage removed because of missing data
 
 traits <- raw_traits %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
   filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g")) # one sample removed: DLL3549
-
-chem_traits <- rename(chem_traits, value = mean_value)
 traits <- rbind(traits, chem_traits)
 
 selected_sp <- traits %>% select(siteID, warming, species) %>% unique() %>% group_by(species) %>% mutate(Freq = n()) %>%
@@ -84,8 +81,6 @@ traits4$trait <- case_when(traits4$trait == "leaf_area_cm2" ~ "LA", traits4$trai
 
 rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
-# 835 SES values, grouped by block and site, we might overestimate effect sizes due to low sample size per block. Number of paired observations more unbalanced based on blockID, much lower sample size for chem traits than leaf traits
-# Task: compute p-values for the mean differences to see which are significant
 
 #Species trait tables
 ```{r}
@@ -100,7 +95,6 @@ species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES =
   select(species, trait, mean_SES) %>% sample_n(1) %>%
   pivot_wider(names_from = trait, values_from = mean_SES)
 species_SES_table$mean_overall <- rowMeans(abs(species_SES_table[,2:11]), na.rm = TRUE)
-data$new <- rowMeans(data[ , c(1,2)], na.rm=TRUE)
 
 trait_SES_table <- traits_f  %>% group_by(trait) %>% mutate(meanSES = mean(SES), absSES = mean(abs(SES)), nsamples = n()) %>%
                    sample_n(1) %>% ungroup() %>% select(c(trait, meanSES, absSES, nsamples))
