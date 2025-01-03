@@ -121,6 +121,17 @@ table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
 rm(sp_tables, data_all_sites)
 ```
 
+# Summarizing patterns
+```{r}
+patterns <- traits_f %>% select(siteID, species, trait, SES)
+patterns$effect <- case_when(patterns$SES >= 0 ~ 1, patterns$SES < 0 ~ -10)
+patterns <- patterns %>% group_by(species, trait) %>% summarize(mean_effect = sum(effect), .groups = "drop")
+patterns <- as.data.frame(table(patterns$mean_effect))
+# index: 1,2 and 3: all increase. -30, -20, -10 all decrease. -19, -9, -8 flip
+# results: all increase: x43, all decrease: x33, flip: 93
+#how many times do we have increase, decrease or flip.
+```
+
 # Plotting SES values: Boxplots
 ```{r}
 SES_sites <- traits_f %>% select(siteID, species, trait, SES)
