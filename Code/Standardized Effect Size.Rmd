@@ -91,7 +91,7 @@ traits_f$outlier3 <- case_when(traits_f$SES <= traits_f$trait_mean - 3* traits_f
                                traits_f$SES >= traits_f$trait_mean + 3* traits_f$trait_sd ~ "high") # 6 outliers +- 3 sd away from the mean removed
 traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait_sd, outlier3))
 
-species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES = mean(SES)) %>%
+species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES = mean(abs(SES))) %>%
   select(species, trait, mean_SES) %>% sample_n(1) %>%
   pivot_wider(names_from = trait, values_from = mean_SES)
 species_SES_table$mean_overall <- rowMeans(abs(species_SES_table[,2:11]), na.rm = TRUE)
@@ -130,6 +130,21 @@ patterns <- as.data.frame(table(patterns$mean_effect))
 # index: 1,2 and 3: all increase. -30, -20, -10 all decrease. -19, -9, -8 flip
 # results: all increase: x43, all decrease: x33, flip: 93
 #how many times do we have increase, decrease or flip.
+
+# species with most medium to high effect sizes
+SES_05 <- traits_f %>% select(siteID, species, trait, SES)
+SES_05$threshold <- case_when(SES_05$SES >= 1 | SES_05$SES <= - 1 ~ 1)
+SES_05 <- SES_05 %>% na.omit() %>% group_by(species) %>% summarize(sum_SES05 = sum(threshold), .groups = "drop")
+
+# comparison alpine vs generalist species
+classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf)
+SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species") 
+t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ alpine, data = .)) %>% ungroup()
+
+p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value)
+
+print(p_values)
+
 ```
 
 # Plotting SES values: Boxplots
