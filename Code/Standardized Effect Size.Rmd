@@ -118,11 +118,13 @@ table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
   annotate("text", x = 4.3, y = 2.5, label = "generalist", angle = 90, size = 4) # before: x = 4.4, y = 2
 
 # print 1600 x 1000
-rm(sp_tables, data_all_sites)
+rm(sp_tables, data_all_sites, species_SES_table, trait_SES_table, table_plots)
 ```
 
 # Summarizing patterns
 ```{r}
+classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
+
 patterns <- traits_f %>% select(siteID, species, trait, SES)
 patterns$effect <- case_when(patterns$SES >= 0 ~ 1, patterns$SES < 0 ~ -10)
 patterns <- patterns %>% group_by(species, trait) %>% summarize(mean_effect = sum(effect), .groups = "drop")
@@ -131,14 +133,42 @@ patterns <- as.data.frame(table(patterns$mean_effect))
 # results: all increase: x43, all decrease: x33, flip: 93
 #how many times do we have increase, decrease or flip.
 
-# species with most medium to high effect sizes
-SES_05 <- traits_f %>% select(siteID, species, trait, SES)
-SES_05$threshold <- case_when(SES_05$SES >= 1 | SES_05$SES <= - 1 ~ 1)
-SES_05 <- SES_05 %>% na.omit() %>% group_by(species) %>% summarize(sum_SES05 = sum(threshold), .groups = "drop")
+# species with most medium to high effect sizes, alpine vs. generalists
+SES_lim <- traits_f %>% select(siteID, species, trait, SES) %>% group_by(species)
+SES_lim <- SES_lim %>% summarize(total = n(), limit_1 = sum(abs(SES) >= 1), limit_08 = sum(abs(SES) >= 0.8), limit_05 = sum(abs(SES) >= 0.5))
+SES_lim <- SES_lim %>% left_join(classification[,1:2], by = "species") %>% mutate(alpine = str_replace_all(alpine, c("1" = "alpine", "0" = "generalist")))
+
+alp_gen <- SES_lim %>% group_by(alpine) %>% summarize(across(2:5, sum)) %>%
+           pivot_longer(cols = 2:5, names_to = "Category", values_to = "Value")
+alp_gen <- alp_gen %>% ungroup() %>% mutate(Category = factor(Category, levels = c("total", "limit_1", "limit_08", "limit_05")))
+# alp_gen$Category <- factor(alp_gen$Category, levels = c("SES1", "SES08", "SES05", "all"))
+
+bar_plot <- ggplot(alp_gen, aes(x = alpine, y = Value, fill = Category)) +
+  geom_bar(stat = "identity", position = "identity", width = 0.7, color = "black") + # or position = "dodge" # or without position and alpha, as stacked graph # 
+  scale_fill_manual(values = c("black", "darkgrey", "lightgrey", "white"), labels = c("SES1", "SES08", "SES05", "all")) +
+  facet_wrap(~ alpine, scales = "free", ncol = 2) +
+  labs(title = NULL,
+       x = NULL,
+       y = "Sum of SES values") +
+  theme_classic() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+SES_lim$fraction <- SES_lim$sum_SES05/SES_lim$total # the fraction is important because there are more alpine than generalist species
+
+t.test(sum_SES05 ~ alpine, data = SES_lim) # neither sum nor fraction are significantly different between alpine and generalist species
+
+#histograms
+alpine <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification[,1:2], by = "species") %>% filter(alpine == 1)
+hist_alp <- hist(alpine$SES, breaks = 20) # print 600 x 400
+
+generalist <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification[,1:2], by = "species") %>% filter(alpine == 0)
+hist_gen <- hist(generalist$SES) # print 600 x 400
+
+# stacked bar plots
+
 
 # comparison alpine vs generalist species
-classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf)
-SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species") 
+SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species")
+SES_compare$SES <- abs(SES_compare$SES)
 t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ alpine, data = .)) %>% ungroup()
 
 p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value)
