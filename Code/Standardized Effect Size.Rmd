@@ -11,6 +11,7 @@ library("tidyverse")
 library("ie2misc") # madstat mean absolute deviation
 library("ggplot2")
 library("gghalves")
+library("cowplot")
 ```
 
 # Re-arranging data frame and computing Cohen's d
@@ -103,27 +104,28 @@ sp_tables <- traits_f  %>% select(siteID, species, trait, SES) #%>% filter(trait
 
 data_all_sites <- sp_tables %>% mutate(siteID = "overall") %>% group_by(species, trait) %>% mutate(SES = mean(SES)) %>% sample_n(1) %>% ungroup()
 sp_tables <- sp_tables %>% bind_rows(data_all_sites)
-sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "1315", sp_tables$siteID == "Gudmedalen" ~ "2118",
-                                 sp_tables$siteID == "Skjelingahaugen" ~ "3601", sp_tables$siteID == "overall" ~ "overall")
-sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("1315", "2118", "3601", "overall"))) %>% select(-c(siteID))
+sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "low", sp_tables$siteID == "Gudmedalen" ~ "medium",
+                                 sp_tables$siteID == "Skjelingahaugen" ~ "high", sp_tables$siteID == "overall" ~ "overall")
+sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall"))) %>% select(-c(siteID))
 sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
 
 table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
   scale_size_continuous(range = c(0.5,8), breaks = c(0.1, 1, 2, 3)) + theme_classic() + # c(1, 10)
   scale_y_discrete(limits = rev(levels(sp_tables$species))) +
-  labs(title = NULL, x = "Precipitation [mm]", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) + theme(legend.position = "top") +
+  labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) + theme(legend.position = "top") +
   geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
   facet_wrap(~ trait, scales = "free", ncol = 5) + annotate("text", x = 4.3, y = 8, label = "alpine", angle = 90, size = 4) + # before: x = 4.4, y = 7.5
   annotate("text", x = 4.3, y = 2.5, label = "generalist", angle = 90, size = 4) # before: x = 4.4, y = 2
 
 # print 1600 x 1000
-rm(sp_tables, data_all_sites, species_SES_table, trait_SES_table, table_plots)
+rm(sp_tables, data_all_sites)
 ```
 
 # Summarizing patterns
 ```{r}
 classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
+classification$type <- case_when(str_detect(classification$species, "Agrostis|Anthoxanthum|Carex|Festuca|Poa|Avenella|Deschampsia|Nardus") ~ "grass", TRUE ~ "herb")
 
 patterns <- traits_f %>% select(siteID, species, trait, SES)
 patterns$effect <- case_when(patterns$SES >= 0 ~ 1, patterns$SES < 0 ~ -10)
@@ -136,35 +138,44 @@ patterns <- as.data.frame(table(patterns$mean_effect))
 # species with most medium to high effect sizes, alpine vs. generalists
 SES_lim <- traits_f %>% select(siteID, species, trait, SES) %>% group_by(species)
 SES_lim <- SES_lim %>% summarize(total = n(), limit_1 = sum(abs(SES) >= 1), limit_08 = sum(abs(SES) >= 0.8), limit_05 = sum(abs(SES) >= 0.5))
-SES_lim <- SES_lim %>% left_join(classification[,1:2], by = "species") %>% mutate(alpine = str_replace_all(alpine, c("1" = "alpine", "0" = "generalist")))
+SES_lim <- SES_lim %>% left_join(classification[,1:4], by = "species") #%>% mutate(alpine = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist"))) # Choose classification type here
 
-alp_gen <- SES_lim %>% group_by(alpine) %>% summarize(across(2:5, sum)) %>%
-           pivot_longer(cols = 2:5, names_to = "Category", values_to = "Value")
-alp_gen <- alp_gen %>% ungroup() %>% mutate(Category = factor(Category, levels = c("total", "limit_1", "limit_08", "limit_05")))
-# alp_gen$Category <- factor(alp_gen$Category, levels = c("SES1", "SES08", "SES05", "all"))
+alp_gen <- SES_lim %>% group_by(type) %>% summarize(across(2:5, sum))
+alp_gen <- alp_gen %>% mutate(limit_08 = limit_08 - limit_1, limit_05 = limit_05 - (limit_08 + limit_1),
+                              total = total - (limit_05 + limit_08 + limit_1)) %>%
+           pivot_longer(cols = 2:5, names_to = "Category", values_to = "Value") %>% ungroup() # changing counts so that each column contains only the surplus
+alp_gen$Category <- factor(alp_gen$Category, levels = c("total", "limit_05", "limit_08", "limit_1"))
 
-bar_plot <- ggplot(alp_gen, aes(x = alpine, y = Value, fill = Category)) +
-  geom_bar(stat = "identity", position = "identity", width = 0.7, color = "black") + # or position = "dodge" # or without position and alpha, as stacked graph # 
-  scale_fill_manual(values = c("black", "darkgrey", "lightgrey", "white"), labels = c("SES1", "SES08", "SES05", "all")) +
-  facet_wrap(~ alpine, scales = "free", ncol = 2) +
-  labs(title = NULL,
-       x = NULL,
-       y = "Sum of SES values") +
-  theme_classic() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+bar_plot <- ggplot(alp_gen, aes(x = type, y = Value, fill = Category)) +
+  geom_bar(stat = "identity", width = 0.7, color = "black") + # or position = "dodge" # or without position and alpha, as stacked graph # 
+  scale_fill_manual(values = c("white", "lightgrey", "darkgrey", "black"), labels = c("SES < 0.5", "SES \u2265 0.5", "SES \u2265 0.8", "SES \u2265 1")) +
+  facet_wrap(~ type, scales = "free", ncol = 2) +
+  labs(title = NULL, x = "", y = "Number of paired observations") +
+  theme_classic() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) # print 400 x 400
 
-SES_lim$fraction <- SES_lim$sum_SES05/SES_lim$total # the fraction is important because there are more alpine than generalist species
-
-t.test(sum_SES05 ~ alpine, data = SES_lim) # neither sum nor fraction are significantly different between alpine and generalist species
+#SES_lim$fraction <- SES_lim$sum_SES05/SES_lim$total # the fraction is important because there are more alpine than generalist species
 
 #histograms
-alpine <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification[,1:2], by = "species") %>% filter(alpine == 1)
-hist_alp <- hist(alpine$SES, breaks = 20) # print 600 x 400
+hist_table <- traits_f %>% ungroup() %>% select(species, SES) %>% left_join(classification[,1:4], by = "species") #%>% mutate(Group = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist")))
+hist_table$type <- factor(hist_table$type, levels = c("herb", "grass"))
 
-generalist <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification[,1:2], by = "species") %>% filter(alpine == 0)
-hist_gen <- hist(generalist$SES) # print 600 x 400
+ # 27 75 or 5 95 percentile
+percentiles <- aggregate(SES ~ type, data = hist_table, function(x) c(mean = mean(x), Q05 = quantile(x, 0.05), Q95 = quantile(x, 0.95)))
+percentiles <- do.call(data.frame, percentiles) # Flatten the nested columns
+colnames(percentiles) <- c("Group", "mean", "Q05", "Q95")
 
-# stacked bar plots
+hist_plot <- ggplot(hist_table, aes(x = SES, fill = type)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30, color = "black") +
+  geom_vline(data = percentiles, aes(xintercept = mean), linetype = "dashed", size = 1, color = c("black", "red")) +
+  geom_vline(data = percentiles, aes(xintercept = Q05, color = type), linetype = "dotted", size = 1, color = c("black", "red")) +
+  geom_vline(data = percentiles, aes(xintercept = Q95, color = type), linetype = "dotted", size = 1, color = c("black", "red")) +
+  scale_fill_manual(values = c("darkgrey", "red")) +
+  scale_color_manual(values = c("darkgrey", "red")) +
+  labs(title = NULL, x = "Cohen's d", y = "Number of paired observations") +
+  theme_classic() +
+  theme(legend.position = "top")
 
+combined_plot <- plot_grid(hist_plot, bar_plot, labels = c("a", "b"), ncol = 2, align = "h", axis =  "tb", rel_widths = c(3, 2)) # print 850 x 400
 
 # comparison alpine vs generalist species
 SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species")
@@ -181,11 +192,11 @@ print(p_values)
 ```{r}
 SES_sites <- traits_f %>% select(siteID, species, trait, SES)
 
-SES_sites$precip <- case_when(SES_sites$siteID == "Ulvehaugen" ~ "1315", SES_sites$siteID == "Gudmedalen" ~ "2118", SES_sites$siteID == "Skjelingahaugen" ~ "3601")
+SES_sites$precip <- case_when(SES_sites$siteID == "Ulvehaugen" ~ "low", SES_sites$siteID == "Gudmedalen" ~ "medium", SES_sites$siteID == "Skjelingahaugen" ~ "high")
 
 data_all_sites <- SES_sites %>% mutate(precip = "overall")
 SES_combined <- bind_rows(SES_sites, data_all_sites)
-SES_combined <- SES_combined %>% mutate(precip = factor(precip, levels = c("1315", "2118", "3601", "overall")))
+SES_combined <- SES_combined %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall")))
 
 SES_mean <- SES_combined %>% group_by(precip, trait) %>% summarize(mean_SES = mean(SES), .groups = "drop")
 
@@ -200,7 +211,7 @@ panel_plots <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   facet_wrap(~ trait, scales = "free", ncol = 2) + # Facet by trait
   scale_fill_brewer(palette = "Set2") + # Optional color palette
   theme_classic() +
-  labs(title = NULL, x = "Precipitation [mm]", y = "Standardized effect size [Cohen's d]") +
+  labs(title = NULL, x = "Precipitation", y = "Standardized effect size [Cohen's d]") +
   theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12)) +
   ylim(-2.62, 2.62) # otherwise ylim(-5,5)
 
