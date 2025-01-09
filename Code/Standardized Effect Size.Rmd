@@ -92,6 +92,7 @@ traits_f$outlier3 <- case_when(traits_f$SES <= traits_f$trait_mean - 3* traits_f
                                traits_f$SES >= traits_f$trait_mean + 3* traits_f$trait_sd ~ "high") # 6 outliers +- 3 sd away from the mean removed
 traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait_sd, outlier3))
 
+#_______________________________________________________________________________
 species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES = mean(abs(SES))) %>%
   select(species, trait, mean_SES) %>% sample_n(1) %>%
   pivot_wider(names_from = trait, values_from = mean_SES)
@@ -100,6 +101,7 @@ species_SES_table$mean_overall <- rowMeans(abs(species_SES_table[,2:11]), na.rm 
 trait_SES_table <- traits_f  %>% group_by(trait) %>% mutate(meanSES = mean(SES), absSES = mean(abs(SES)), nsamples = n()) %>%
                    sample_n(1) %>% ungroup() %>% select(c(trait, meanSES, absSES, nsamples))
 
+#_______________________________________________________________________________
 sp_tables <- traits_f  %>% select(siteID, species, trait, SES) #%>% filter(trait != "C/N")
 
 data_all_sites <- sp_tables %>% mutate(siteID = "overall") %>% group_by(species, trait) %>% mutate(SES = mean(SES)) %>% sample_n(1) %>% ungroup()
@@ -107,7 +109,9 @@ sp_tables <- sp_tables %>% bind_rows(data_all_sites)
 sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "low", sp_tables$siteID == "Gudmedalen" ~ "medium",
                                  sp_tables$siteID == "Skjelingahaugen" ~ "high", sp_tables$siteID == "overall" ~ "overall")
 sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall"))) %>% select(-c(siteID))
-sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
+
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina")))
 
 table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
@@ -115,8 +119,8 @@ table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
   scale_y_discrete(limits = rev(levels(sp_tables$species))) +
   labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) + theme(legend.position = "top") +
   geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
-  facet_wrap(~ trait, scales = "free", ncol = 5) + annotate("text", x = 4.3, y = 8, label = "alpine", angle = 90, size = 4) + # before: x = 4.4, y = 7.5
-  annotate("text", x = 4.3, y = 2.5, label = "generalist", angle = 90, size = 4) # before: x = 4.4, y = 2
+  facet_wrap(~ trait, scales = "free", ncol = 5) + annotate("text", x = 4.3, y = 8, label = "herba", angle = 90, size = 4) + # before: x = 4.4, y = 7.5
+  annotate("text", x = 4.3, y = 2.5, label = "grasses", angle = 90, size = 4) # before: x = 4.4, y = 2
 
 # print 1600 x 1000
 rm(sp_tables, data_all_sites)
@@ -127,20 +131,12 @@ rm(sp_tables, data_all_sites)
 classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
 classification$type <- case_when(str_detect(classification$species, "Agrostis|Anthoxanthum|Carex|Festuca|Poa|Avenella|Deschampsia|Nardus") ~ "grass", TRUE ~ "herb")
 
-patterns <- traits_f %>% select(siteID, species, trait, SES)
-patterns$effect <- case_when(patterns$SES >= 0 ~ 1, patterns$SES < 0 ~ -10)
-patterns <- patterns %>% group_by(species, trait) %>% summarize(mean_effect = sum(effect), .groups = "drop")
-patterns <- as.data.frame(table(patterns$mean_effect))
-# index: 1,2 and 3: all increase. -30, -20, -10 all decrease. -19, -9, -8 flip
-# results: all increase: x43, all decrease: x33, flip: 93
-#how many times do we have increase, decrease or flip.
-
 # species with most medium to high effect sizes, alpine vs. generalists
 SES_lim <- traits_f %>% select(siteID, species, trait, SES) %>% group_by(species)
 SES_lim <- SES_lim %>% summarize(total = n(), limit_1 = sum(abs(SES) >= 1), limit_08 = sum(abs(SES) >= 0.8), limit_05 = sum(abs(SES) >= 0.5))
-SES_lim <- SES_lim %>% left_join(classification[,1:4], by = "species") #%>% mutate(alpine = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist"))) # Choose classification type here
+SES_lim <- SES_lim %>% left_join(classification[,1:4], by = "species") %>% mutate(alpine = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist"))) # Choose classification type here
 
-alp_gen <- SES_lim %>% group_by(type) %>% summarize(across(2:5, sum))
+alp_gen <- SES_lim %>% group_by(alpine) %>% summarize(across(2:5, sum))
 alp_gen <- alp_gen %>% mutate(limit_08 = limit_08 - limit_1, limit_05 = limit_05 - (limit_08 + limit_1),
                               total = total - (limit_05 + limit_08 + limit_1)) %>%
            pivot_longer(cols = 2:5, names_to = "Category", values_to = "Value") %>% ungroup() # changing counts so that each column contains only the surplus
@@ -177,12 +173,12 @@ hist_plot <- ggplot(hist_table, aes(x = SES, fill = type)) +
 
 combined_plot <- plot_grid(hist_plot, bar_plot, labels = c("a", "b"), ncol = 2, align = "h", axis =  "tb", rel_widths = c(3, 2)) # print 850 x 400
 
-# comparison alpine vs generalist species
+# comparison alpine vs generalist species and grasses vs. herbs
 SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species")
-SES_compare$SES <- abs(SES_compare$SES)
-t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ alpine, data = .)) %>% ungroup()
+SES_compare$SES <- abs(SES_compare$SES) # Optional. Depending if you want to compare actual or absolute SES values
+t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(alpine), data = .)) %>% ungroup()
 
-p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value)
+p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
 
 print(p_values)
 
