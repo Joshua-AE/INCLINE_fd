@@ -179,6 +179,7 @@ SES_compare$SES <- abs(SES_compare$SES) # Optional. Depending if you want to com
 t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(alpine), data = .)) %>% ungroup()
 
 p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
+test <- SES_compare %>% group_by(trait, alpine) %>% summarize(mean = mean(abs(SES))) # shows trait means by group
 
 print(p_values)
 
