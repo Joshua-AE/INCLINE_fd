@@ -93,7 +93,7 @@ traits_f$outlier3 <- case_when(traits_f$SES <= traits_f$trait_mean - 3* traits_f
 traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait_sd, outlier3))
 
 #_______________________________________________________________________________
-species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES = mean(abs(SES))) %>%
+species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES = mean(SES)) %>%
   select(species, trait, mean_SES) %>% sample_n(1) %>%
   pivot_wider(names_from = trait, values_from = mean_SES)
 species_SES_table$mean_overall <- rowMeans(abs(species_SES_table[,2:11]), na.rm = TRUE)
