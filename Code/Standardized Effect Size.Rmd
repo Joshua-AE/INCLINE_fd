@@ -78,7 +78,7 @@ traits4$SES <- (traits4$OTC_mean - traits4$C_mean) / traits4$pooled_SD # Cohen's
 
 traits4$PR <- (traits4$OTC_mean - traits4$C_mean) / traits4$C_mean # Relative Distance Plasticity Index: shows the factor by which the trait value in the OTC increased or decreased, in comparison to the control plot
 
-traits4$trait <- case_when(traits4$trait == "leaf_area_cm2" ~ "LA", traits4$trait == "leaf_thickness_mm" ~ "LTH", traits4$trait == "sla_cm2_g" ~ "SLA", traits4$trait == "plant_height_cm" ~ "H", traits4$trait == "ldmc" ~ "LDMC", traits4$trait == "c_n" ~ "C/N", traits4$trait == "c_percent" ~ "C %", traits4$trait == "d13c" ~ "D13C", traits4$trait == "d15n" ~ "D15N", traits4$trait == "n_percent" ~ "N %")
+traits4$trait <- case_when(traits4$trait == "leaf_area_cm2" ~ "LA", traits4$trait == "leaf_thickness_mm" ~ "LTH", traits4$trait == "sla_cm2_g" ~ "SLA", traits4$trait == "plant_height_cm" ~ "H", traits4$trait == "ldmc" ~ "LDMC", traits4$trait == "c_n" ~ "C:N", traits4$trait == "c_percent" ~ "C %", traits4$trait == "d13c" ~ "δ13C", traits4$trait == "d15n" ~ "δ15N", traits4$trait == "n_percent" ~ "N %")
 
 rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
@@ -102,7 +102,7 @@ trait_SES_table <- traits_f  %>% group_by(trait) %>% mutate(meanSES = mean(SES),
                    sample_n(1) %>% ungroup() %>% select(c(trait, meanSES, absSES, nsamples))
 
 #_______________________________________________________________________________
-sp_tables <- traits_f  %>% select(siteID, species, trait, SES) #%>% filter(trait != "C/N")
+sp_tables <- traits_f  %>% select(siteID, species, trait, SES) #%>% filter(trait != "C:N")
 
 data_all_sites <- sp_tables %>% mutate(siteID = "overall") %>% group_by(species, trait) %>% mutate(SES = mean(SES)) %>% sample_n(1) %>% ungroup()
 sp_tables <- sp_tables %>% bind_rows(data_all_sites)
@@ -198,7 +198,7 @@ SES_combined <- SES_combined %>% mutate(precip = factor(precip, levels = c("low"
 SES_mean <- SES_combined %>% group_by(precip, trait) %>% summarize(mean_SES = mean(SES), .groups = "drop")
 
 panel_plots <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
-  geom_half_violin(side = "l", trim = TRUE, colour = NA) +
+  geom_half_violin(side = "l", trim = TRUE) +
   geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
   geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
   geom_text(data = SES_mean, aes(x = precip, y = mean_SES, label = round(mean_SES, 2)), y = 2,
@@ -206,7 +206,7 @@ panel_plots <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
     size = 3.5) +
   stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "black", linewidth = 1) +
   facet_wrap(~ trait, scales = "free", ncol = 2) + # Facet by trait
-  scale_fill_brewer(palette = "Set2") + # Optional color palette
+  scale_fill_manual(values = c("#c6dbef", "#6baed6", "#08519c", "grey")) +
   theme_classic() +
   labs(title = NULL, x = "Precipitation", y = "Standardized effect size [Cohen's d]") +
   theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12)) +
@@ -241,7 +241,7 @@ SES_sites$level <- case_when(SES_sites$`mean SES` < 0 ~ "negative", SES_sites$`m
 test <- SES_sites %>% group_by(trait) %>% mutate(mean_trait = mean(`mean SES`)) %>% sample_n(1) %>% select(c(trait, mean_trait))
 
 SES_sites$siteID <- factor(SES_sites$siteID, levels = c("Ulvehaugen", "Gudmedalen", "Skjelingahaugen"))
-SES_sites$trait <- factor(SES_sites$trait, levels = c("C %", "N %", "C/N", "D13C", "D15N", "H", "LA", "LDMC", "LTH", "SLA"))
+SES_sites$trait <- factor(SES_sites$trait, levels = c("C %", "N %", "C:N", "δ13C", "δ15N", "H", "LA", "LDMC", "LTH", "SLA"))
 
 SES_plot <- ggplot(SES_sites, aes(x = siteID, y = `mean SES`, shape = level)) +  
   geom_point(size = 3) +
@@ -311,9 +311,9 @@ rm(traits_scaled, species_n, distribution, raw_traits, mean_abs_SES, sgnf_SES)
 
 # DEPRECTAED
 ```{r}
-# d13c only has negative values while d15n has positive and negative values
-# Somehow for d15n, values range around 0 so relative sd makes no sense as mean = 0 and sd = 1 ..
-# Instead, use e.g. MAD mean absolute deviation. 1/n * sum(abs(x-mean)). That doesnt solve the problem. The problem is that traits have different units of measurement. To be able to compare variation between traits, I divide sd by mean which is not possible for d15n. Instead, scale the traits seperately (?)
+# δ13c only has negative values while δ15N has positive and negative values
+# Somehow for δ15N, values range around 0 so relative sd makes no sense as mean = 0 and sd = 1 ..
+# Instead, use e.g. MAD mean absolute deviation. 1/n * sum(abs(x-mean)). That doesnt solve the problem. The problem is that traits have different units of measurement. To be able to compare variation between traits, I divide sd by mean which is not possible for δ15N. Instead, scale the traits seperately (?)
 # Computation of Cohen's d is not affected by values ranging around 0
 
 species_mad <- aggregate(traits$value, by = traits[,4:5],
