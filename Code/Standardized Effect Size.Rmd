@@ -108,19 +108,24 @@ data_all_sites <- sp_tables %>% mutate(siteID = "overall") %>% group_by(species,
 sp_tables <- sp_tables %>% bind_rows(data_all_sites)
 sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "low", sp_tables$siteID == "Gudmedalen" ~ "medium",
                                  sp_tables$siteID == "Skjelingahaugen" ~ "high", sp_tables$siteID == "overall" ~ "overall")
-sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall"))) %>% select(-c(siteID))
+#sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall"))) %>% select(-c(siteID))
 #sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
 
-#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina")))
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina")))
 
-table_plots <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
+points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
   scale_size_continuous(range = c(0.5,8), breaks = c(0.1, 1, 2, 3)) + theme_classic() + # c(1, 10)
   scale_y_discrete(limits = rev(levels(sp_tables$species))) +
-  labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) + theme(legend.position = "top") +
+  labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) +
   geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
-  facet_wrap(~ trait, scales = "free", ncol = 5) + annotate("text", x = 4.3, y = 8, label = "alpine", angle = 90, size = 4) + # before: x = 4.4, y = 7.5
-  annotate("text", x = 4.3, y = 2.5, label = "generalist", angle = 90, size = 4) # before: x = 4.4, y = 2
+  facet_wrap(~ trait, ncol = 5, scales = "free") +
+  annotate("text", x = 4.3, y = 8, label = "Forbs 🡺" , angle = 90, size = 4) +
+  annotate("text", x = 4.3, y = 4.2, label = "🡸 Graminoids", angle = 90, size = 4) +
+  annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.2) +
+  theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12))
+
+# Helpful Unicode tables for arrows: https://en.wikipedia.org/wiki/Arrow_(symbol)
 
 # print 1600 x 1000
 rm(sp_tables, data_all_sites)
@@ -129,23 +134,23 @@ rm(sp_tables, data_all_sites)
 # Summarizing patterns
 ```{r}
 classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
-classification$type <- case_when(str_detect(classification$species, "Agrostis|Anthoxanthum|Carex|Festuca|Poa|Avenella|Deschampsia|Nardus") ~ "graminoids", TRUE ~ "herbs")
+classification$Type <- case_when(str_detect(classification$species, "Agrostis|Anthoxanthum|Carex|Festuca|Poa|Avenella|Deschampsia|Nardus") ~ "Graminoids", TRUE ~ "Forbs")
 
 # species with most medium to high effect sizes, alpine vs. generalists
 SES_lim <- traits_f %>% select(siteID, species, trait, SES) %>% group_by(species)
 SES_lim <- SES_lim %>% summarize(total = n(), limit_1 = sum(abs(SES) >= 1), limit_08 = sum(abs(SES) >= 0.8), limit_05 = sum(abs(SES) >= 0.5))
 SES_lim <- SES_lim %>% left_join(classification[,1:4], by = "species") %>% mutate(alpine = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist")))
 
-alp_gen <- SES_lim %>% group_by(type) %>% summarize(across(2:5, sum))
+alp_gen <- SES_lim %>% group_by(Type) %>% summarize(across(2:5, sum))
 alp_gen <- alp_gen %>% mutate(limit_08 = limit_08 - limit_1, limit_05 = limit_05 - (limit_08 + limit_1),
                               total = total - (limit_05 + limit_08 + limit_1)) %>%
            pivot_longer(cols = 2:5, names_to = "Category", values_to = "Value") %>% ungroup() # changing counts so that each column contains only the surplus
 alp_gen$Category <- factor(alp_gen$Category, levels = c("total", "limit_05", "limit_08", "limit_1"))
 
-bar_plot <- ggplot(alp_gen, aes(x = type, y = Value, fill = Category)) +
+bar_plot <- ggplot(alp_gen, aes(x = Type, y = Value, fill = Category)) +
   geom_bar(stat = "identity", width = 0.7, color = "black") + # or position = "dodge" # or without position and alpha, as stacked graph # 
   scale_fill_manual(values = c("white", "lightgrey", "darkgrey", "black"), labels = c("SES < 0.5", "SES \u2265 0.5", "SES \u2265 0.8", "SES \u2265 1")) +
-  facet_wrap(~ type, scales = "free", ncol = 2) +
+  facet_wrap(~ Type, scales = "free", ncol = 2) +
   labs(title = NULL, x = "", y = "Number of paired observations") +
   theme_classic() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) # print 400 x 400
 
@@ -154,17 +159,17 @@ bar_plot <- ggplot(alp_gen, aes(x = type, y = Value, fill = Category)) +
 #histograms
 hist_table <- traits_f %>% ungroup() %>% select(species, SES) %>% left_join(classification[,1:4], by = "species") %>%
   mutate(Group = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist")))
-hist_table$type <- factor(hist_table$type, levels = c("herbs", "graminoids"))
+hist_table$Type <- factor(hist_table$Type, levels = c("Forbs", "Graminoids"))
 
-percentiles <- aggregate(SES ~ type, data = hist_table, function(x) c(mean = mean(x), Q05 = quantile(x, 0.05), Q95 = quantile(x, 0.95)))
+percentiles <- aggregate(SES ~ Type, data = hist_table, function(x) c(mean = mean(x), Q05 = quantile(x, 0.05), Q95 = quantile(x, 0.95)))
 percentiles <- do.call(data.frame, percentiles) # Flatten the nested columns
 colnames(percentiles) <- c("Group", "mean", "Q05", "Q95")
 
-hist_plot <- ggplot(hist_table, aes(x = SES, fill = type)) +
+hist_plot <- ggplot(hist_table, aes(x = SES, fill = Type)) +
   geom_histogram(position = "identity", alpha = 0.5, bins = 30, color = "black") +
   geom_vline(data = percentiles, aes(xintercept = mean), linetype = "dashed", linewidth = 1, color = c("black", "red")) +
-  geom_vline(data = percentiles, aes(xintercept = Q05, color = type), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
-  geom_vline(data = percentiles, aes(xintercept = Q95, color = type), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
+  geom_vline(data = percentiles, aes(xintercept = Q05, color = Type), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
+  geom_vline(data = percentiles, aes(xintercept = Q95, color = Type), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
   scale_fill_manual(values = c("darkgrey", "red")) +
   scale_color_manual(values = c("darkgrey", "red")) +
   labs(title = NULL, x = "Cohen's d", y = "Number of paired observations") +
@@ -173,7 +178,7 @@ hist_plot <- ggplot(hist_table, aes(x = SES, fill = type)) +
 
 combined_plot <- plot_grid(hist_plot, bar_plot, labels = c("a", "b"), ncol = 2, align = "h", axis =  "tb", rel_widths = c(3, 2)) # print 850 x 400
 
-# comparison alpine vs generalist species and graminoids vs. herbs
+# comparison alpine vs generalist species and graminoids vs. Forbs
 SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species")
 SES_compare$SES <- abs(SES_compare$SES) # Optional. Depending if you want to compare actual or absolute SES values
 t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(alpine), data = .)) %>% ungroup()
@@ -197,7 +202,7 @@ SES_combined <- SES_combined %>% mutate(precip = factor(precip, levels = c("low"
 
 SES_mean <- SES_combined %>% group_by(precip, trait) %>% summarize(mean_SES = mean(SES), .groups = "drop")
 
-panel_plots <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
+violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   geom_half_violin(side = "l", trim = TRUE) +
   geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
   geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
