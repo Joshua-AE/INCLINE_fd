@@ -268,6 +268,19 @@ violin_plot <- ggplot(data_combined, aes(x = precip, y = trait_mean, fill = prec
 
 # print 1000 x 1200
 
+site_comp <- site_comp %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Gudmedalen" ~ "Gud"),
+                                  comp2 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Skjelingahaugen" ~ "Skj"),
+                                  comp3 = case_when(siteID == "Gudmedalen" ~ "Gud", siteID == "Skjelingahaugen" ~ "Skj"))
+comp3 <- site_comp %>% select(-c(comp1, comp2)) %>% na.omit() %>% group_by(trait)
+t_test_results <- comp3 %>% do(t_test = t.test(trait_mean ~ as.factor(comp3), data = .)) %>% ungroup()
+
+p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
+test <- comp1 %>% group_by(trait, comp1) %>% summarize(mean = mean(trait_mean)) # shows trait means by group
+
+print(p_values)
+# Significant differences: Ulv Gud only D13C, p = 0.05397769
+# Ulv Skj only C % p = 0.01907241	
+# Gud Skj H p = 0.00504747
 rm(mean_across, data_combined, data_all_sites, test)
 ```
 
