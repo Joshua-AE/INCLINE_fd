@@ -203,7 +203,7 @@ SES_combined <- SES_combined %>% mutate(precip = factor(precip, levels = c("low"
 SES_mean <- SES_combined %>% group_by(precip, trait) %>% summarize(mean_SES = mean(SES), .groups = "drop")
 
 violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
-  geom_half_violin(side = "l", trim = TRUE) +
+  geom_half_violin(side = "l", trim = TRUE, color = NA) +
   geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
   geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
   geom_text(data = SES_mean, aes(x = precip, y = mean_SES, label = round(mean_SES, 2)), y = 2,
