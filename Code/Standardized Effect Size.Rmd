@@ -190,7 +190,7 @@ print(p_values)
 
 ```
 
-# Plotting SES values: Boxplots
+# Plotting SES values: Violin plots
 ```{r}
 SES_sites <- traits_f %>% select(siteID, species, trait, SES)
 
@@ -233,6 +233,42 @@ violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
 #  geom_boxplot(aes(fill = trait), outlier.alpha = 0) +
 #  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
 #  geom_jitter(color = "black", height = NULL, width = 0.3, alpha = 0.5) + ylim(-2.5,2)
+```
+
+# Functional differences between sites (trait means)
+```{r}
+site_comp <- traits %>% filter(warming == "C") %>% group_by(siteID, species, trait) %>%
+             summarize(trait_mean = mean(value)) %>% ungroup() # site comparisons. 23 trait measurements missing.
+
+site_comp$trait <- case_when(site_comp$trait == "leaf_area_cm2" ~ "LA", site_comp$trait == "leaf_thickness_mm" ~ "LTH", site_comp$trait == "sla_cm2_g" ~ "SLA", site_comp$trait == "plant_height_cm" ~ "H", site_comp$trait == "ldmc" ~ "LDMC", site_comp$trait == "c_n" ~ "C:N", site_comp$trait == "c_percent" ~ "C %", site_comp$trait == "d13c" ~ "δ13C", site_comp$trait == "d15n" ~ "δ15N", site_comp$trait == "n_percent" ~ "N %")
+
+site_comp <- site_comp %>% group_by(species, trait) %>% mutate(Freq = n()) %>% ungroup()
+site_comp <- site_comp %>% filter(Freq == 3) %>% select(-c(Freq)) # filtering out incomplete trait measurements (not in all 3 sites)
+test <- as.data.frame(table(site_comp$trait))
+
+site_comp$precip <- case_when(site_comp$siteID == "Ulvehaugen" ~ "low", site_comp$siteID == "Gudmedalen" ~ "medium", site_comp$siteID == "Skjelingahaugen" ~ "high")
+
+data_all_sites <- site_comp %>% mutate(precip = "overall")
+data_combined <- bind_rows(site_comp, data_all_sites)
+data_combined <- data_combined %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall")))
+
+mean_across <- data_combined %>% group_by(precip, trait) %>% summarize(overall_mean = mean(trait_mean), .groups = "drop")
+
+violin_plot <- ggplot(data_combined, aes(x = precip, y = trait_mean, fill = precip)) +
+  geom_half_violin(side = "l", trim = TRUE, color = NA) +
+  geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
+  geom_hline(data = filter(mean_across, precip == "overall"), aes(yintercept = overall_mean), lty = 2, linewidth = 0.25) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "black", linewidth = 1) +
+  facet_wrap(~ trait, scales = "free", ncol = 2) + # Facet by trait
+  scale_fill_manual(values = c("#c6dbef", "#6baed6", "#08519c", "grey")) +
+  theme_classic() +
+  labs(title = NULL, x = "Precipitation", y = "Trait means") +
+  theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12))
+  #ylim(-2.62, 2.62) # otherwise ylim(-5,5)
+
+# print 1000 x 1200
+
+rm(mean_across, data_combined, data_all_sites, test)
 ```
 
 # Plotting SES values
