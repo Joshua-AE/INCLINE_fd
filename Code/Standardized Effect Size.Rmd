@@ -219,6 +219,18 @@ violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
 
 # print 1000 x 1200
 
+site_comp <- SES_sites %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Gudmedalen" ~ "Gud"),
+                                  comp2 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Skjelingahaugen" ~ "Skj"),
+                                  comp3 = case_when(siteID == "Gudmedalen" ~ "Gud", siteID == "Skjelingahaugen" ~ "Skj"))
+comp2 <- site_comp %>% select(-c(comp1, comp3)) %>% na.omit() %>% group_by(trait)
+t_test_results <- comp3 %>% do(t_test = t.test(SES ~ as.factor(comp3), data = .)) %>% ungroup()
+
+p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
+test <- comp1 %>% group_by(trait, comp1) %>% summarize(mean = mean(trait_mean)) # shows trait means by group
+
+print(p_values)
+
+
 #_______________________________________________________________________________ violin plots for all traits and across sites
 #multi_bp <- ggplot(SES_sites, aes(x = trait, y = SES, group = trait)) + geom_violin(aes(fill = trait), trim = T) +
 #  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) + stat_summary(fun.data = "mean_cl_boot", geom = "pointrange",
