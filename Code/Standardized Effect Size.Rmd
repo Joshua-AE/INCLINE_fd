@@ -80,6 +80,11 @@ traits4$PR <- (traits4$OTC_mean - traits4$C_mean) / traits4$C_mean # Relative Di
 
 traits4$trait <- case_when(traits4$trait == "leaf_area_cm2" ~ "LA", traits4$trait == "leaf_thickness_mm" ~ "LTH", traits4$trait == "sla_cm2_g" ~ "SLA", traits4$trait == "plant_height_cm" ~ "H", traits4$trait == "ldmc" ~ "LDMC", traits4$trait == "c_n" ~ "C:N", traits4$trait == "c_percent" ~ "C %", traits4$trait == "d13c" ~ "δ13C", traits4$trait == "d15n" ~ "δ15N", traits4$trait == "n_percent" ~ "N %")
 
+traits_f <- traits4 %>% filter(!is.na(SES)) %>% group_by(trait) %>% mutate(trait_mean = mean(SES), trait_sd = sd(SES)) # trait table filtered
+traits_f$outlier3 <- case_when(traits_f$SES <= traits_f$trait_mean - 3* traits_f$trait_sd ~ "low",
+                               traits_f$SES >= traits_f$trait_mean + 3* traits_f$trait_sd ~ "high") # 6 outliers +- 3 sd away from the mean removed
+traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait_sd, outlier3))
+
 rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
 
@@ -87,12 +92,6 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 ```{r}
 #n_obs <- traits4 %>% filter(!is.na(SES)) %>% group_by(siteID, trait) %>% mutate(n_obs = n()) %>% sample_n(1) %>% select(siteID, trait, n_obs)
 
-traits_f <- traits4 %>% filter(!is.na(SES)) %>% group_by(trait) %>% mutate(trait_mean = mean(SES), trait_sd = sd(SES)) # trait table filtered
-traits_f$outlier3 <- case_when(traits_f$SES <= traits_f$trait_mean - 3* traits_f$trait_sd ~ "low",
-                               traits_f$SES >= traits_f$trait_mean + 3* traits_f$trait_sd ~ "high") # 6 outliers +- 3 sd away from the mean removed
-traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait_sd, outlier3))
-
-#_______________________________________________________________________________
 species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES = mean(SES)) %>%
   select(species, trait, mean_SES) %>% sample_n(1) %>%
   pivot_wider(names_from = trait, values_from = mean_SES)
@@ -202,13 +201,23 @@ SES_combined <- SES_combined %>% mutate(precip = factor(precip, levels = c("low"
 
 SES_mean <- SES_combined %>% group_by(precip, trait) %>% summarize(mean_SES = mean(SES), .groups = "drop")
 
+# Are mean SES values significantly different from 0?
+t_tests <- SES_combined %>% select(-c(siteID, species)) %>% group_by(precip, trait) %>%
+  summarise(t_test = list(t.test(SES, mu = 0)), .groups = "drop") %>%  # Perform t-test against 0
+  mutate(estimate = map_dbl(t_test, ~ .x$estimate),  # Extract mean SES
+         t_value = map_dbl(t_test, ~ .x$statistic),  # Extract t-statistic
+         p_value = map_dbl(t_test, ~ .x$p.value)     # Extract p-value
+  ) %>% select(-t_test)
+
+SES_mean <- left_join(SES_mean, t_tests[,c(1:2,5)], by = c("precip", "trait"))
+SES_mean <- SES_mean %>% mutate(significance = case_when(p_value < 0.05 ~ "*", p_value < 0.1  ~ "+", TRUE ~ ""),
+                                label_text = paste0(round(mean_SES, 2), " ", significance))
+
 violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   geom_half_violin(side = "l", trim = TRUE, color = NA) +
   geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
   geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
-  geom_text(data = SES_mean, aes(x = precip, y = mean_SES, label = round(mean_SES, 2)), y = 2,
-    vjust = -1, # Adjust vertical position
-    size = 3.5) +
+  geom_text(data = SES_mean, aes(x = precip, y = label_text, label = label_text), y = 2, vjust = -1, size = 3.5) +
   stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "black", linewidth = 1) +
   facet_wrap(~ trait, scales = "free", ncol = 2) + # Facet by trait
   scale_fill_manual(values = c("#c6dbef", "#6baed6", "#08519c", "grey")) +
