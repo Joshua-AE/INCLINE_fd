@@ -210,7 +210,7 @@ t_tests <- SES_combined %>% select(-c(siteID, species)) %>% group_by(precip, tra
   ) %>% select(-t_test)
 
 SES_mean <- left_join(SES_mean, t_tests[,c(1:2,5)], by = c("precip", "trait"))
-SES_mean <- SES_mean %>% mutate(significance = case_when(p_value < 0.05 ~ "*", p_value < 0.1  ~ "+", TRUE ~ ""),
+SES_mean <- SES_mean %>% mutate(significance = case_when(p_value < 0.05 ~ "🞲", p_value < 0.1  ~ "+", TRUE ~ ""),
                                 label_text = paste0(round(mean_SES, 2), " ", significance))
 
 violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
