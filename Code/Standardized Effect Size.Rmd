@@ -130,6 +130,46 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
 rm(sp_tables, data_all_sites)
 ```
 
+# Testing for differences using t-tests and f-tests
+```{r}
+classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
+classification$Type <- case_when(str_detect(classification$species, "Agrostis|Anthoxanthum|Carex|Festuca|Poa|Avenella|Deschampsia|Nardus") ~ "Graminoids", TRUE ~ "Forbs")
+
+# comparison alpine vs generalist species and graminoids vs. Forbs
+SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species")
+#SES_compare$SES <- abs(SES_compare$SES) # Optional. Depending if you want to compare actual or absolute SES values
+t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(alpine), data = .)) %>% ungroup()
+
+p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
+test <- SES_compare %>% group_by(trait, alpine) %>% summarize(mean = mean(abs(SES))) # shows trait means by group
+
+print(p_values)
+
+var_test_results <- SES_compare %>% do(var_test = var.test(SES ~ factor(alpine, levels = c(1, 0)), data = .)) %>% ungroup() # alternatively: factor(alpine, levels = c(0, 1))
+var_test_summary <- var_test_results %>% mutate(
+    f_statistic = sapply(var_test, function(x) x$statistic), # f-statistic and ratio of variances are the same.
+    df1 = sapply(var_test, function(x) x$parameter[1]),
+    df2 = sapply(var_test, function(x) x$parameter[2]),
+    p_value = sapply(var_test, function(x) x$p.value)) %>%
+  select(trait, f_statistic, df1, df2, p_value)
+
+
+#_______________________________________________________________________________
+
+site_comp <- traits_f %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Gudmedalen" ~ "Gud"),
+                                  comp2 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Skjelingahaugen" ~ "Skj"),
+                                  comp3 = case_when(siteID == "Gudmedalen" ~ "Gud", siteID == "Skjelingahaugen" ~ "Skj"))
+comp2 <- site_comp %>% select(-c(comp1, comp3)) %>% na.omit() %>% group_by(trait)
+t_test_results <- comp3 %>% do(t_test = t.test(SES ~ as.factor(comp3), data = .)) %>% ungroup()
+
+p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
+test <- comp1 %>% group_by(trait, comp1) %>% summarize(mean = mean(trait_mean)) # shows trait means by group
+
+print(p_values)
+
+```
+
+
 # Summarizing patterns
 ```{r}
 classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
@@ -176,17 +216,6 @@ hist_plot <- ggplot(hist_table, aes(x = SES, fill = Type)) +
   theme(legend.position = "top")
 
 combined_plot <- plot_grid(hist_plot, bar_plot, labels = c("a", "b"), ncol = 2, align = "h", axis =  "tb", rel_widths = c(3, 2)) # print 850 x 400
-
-# comparison alpine vs generalist species and graminoids vs. Forbs
-SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species")
-SES_compare$SES <- abs(SES_compare$SES) # Optional. Depending if you want to compare actual or absolute SES values
-t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(alpine), data = .)) %>% ungroup()
-
-p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
-test <- SES_compare %>% group_by(trait, alpine) %>% summarize(mean = mean(abs(SES))) # shows trait means by group
-
-print(p_values)
-
 ```
 
 # Plotting SES values: Violin plots
@@ -227,18 +256,6 @@ violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   ylim(-2.62, 2.62) # otherwise ylim(-5,5)
 
 # print 1000 x 1200
-
-site_comp <- SES_sites %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Gudmedalen" ~ "Gud"),
-                                  comp2 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Skjelingahaugen" ~ "Skj"),
-                                  comp3 = case_when(siteID == "Gudmedalen" ~ "Gud", siteID == "Skjelingahaugen" ~ "Skj"))
-comp2 <- site_comp %>% select(-c(comp1, comp3)) %>% na.omit() %>% group_by(trait)
-t_test_results <- comp3 %>% do(t_test = t.test(SES ~ as.factor(comp3), data = .)) %>% ungroup()
-
-p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
-test <- comp1 %>% group_by(trait, comp1) %>% summarize(mean = mean(trait_mean)) # shows trait means by group
-
-print(p_values)
-
 
 #_______________________________________________________________________________ violin plots for all traits and across sites
 #multi_bp <- ggplot(SES_sites, aes(x = trait, y = SES, group = trait)) + geom_violin(aes(fill = trait), trim = T) +
