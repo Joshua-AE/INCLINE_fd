@@ -31,7 +31,7 @@ selected_sp <- traits %>% select(siteID, warming, species) %>% unique() %>% grou
                filter(Freq >= 4 & species != "Achillea millefolium") # filtering species we have samples for in C and W for each site. n = 13. 2 sites n = 17. Not included is Achillea millefolium because it has warming samples only in Gud
 selected_sp <- unique(selected_sp$species)
 traits <- traits %>% filter(species %in% selected_sp) # trait set with only 17 selected species. xx.x % of data omitted
-rm(test, chem_traits, raw_traits, selected_sp)
+rm(chem_traits, raw_traits, selected_sp)
 
 # aggregated by site, block and experiment____________________________________________________________________________
 traits1 <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(mean))
