@@ -107,26 +107,27 @@ data_all_sites <- sp_tables %>% mutate(siteID = "overall") %>% group_by(species,
 sp_tables <- sp_tables %>% bind_rows(data_all_sites)
 sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "low", sp_tables$siteID == "Gudmedalen" ~ "medium",
                                  sp_tables$siteID == "Skjelingahaugen" ~ "high", sp_tables$siteID == "overall" ~ "overall")
-#sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall"))) %>% select(-c(siteID))
-#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
+sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall"))) %>% select(-c(siteID))
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
 
-sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina")))
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina")))
 
 points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
-  scale_size_continuous(range = c(0.5,8), breaks = c(0.1, 1, 2, 3)) + theme_classic() + # c(1, 10)
-  scale_y_discrete(limits = rev(levels(sp_tables$species))) +
+  scale_size_continuous(range = c(0.5,8), breaks = c(0.1, 1, 2, 3)) + # c(1, 10)
+  scale_y_discrete(limits = rev(levels(sp_tables$species))) + theme_classic() +
   labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) +
   geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
-  facet_wrap(~ trait, ncol = 5, scales = "free") +
-  annotate("text", x = 4.3, y = 8, label = "Forbs 🡺" , angle = 90, size = 4) +
-  annotate("text", x = 4.3, y = 4.2, label = "🡸 Graminoids", angle = 90, size = 4) +
+  facet_wrap(~ trait, ncol = 5) + # scales = "free"
+  annotate("text", x = 4.3, y = 8.7, label = "Alpine 🡺" , angle = 90, size = 4) + # "Forbs 🡺"
+  annotate("text", x = 4.3, y = 3.7, label = "Generalist", angle = 90, size = 4) + # "🡸 Graminoids" # or just "Graminoids"
   annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.2) +
-  theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12))
-
+  theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"),
+        axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
+# print 1200 x 800
 # Helpful Unicode tables for arrows: https://en.wikipedia.org/wiki/Arrow_(symbol)
 
-# print 1600 x 1000
+
 rm(sp_tables, data_all_sites)
 ```
 
@@ -246,7 +247,7 @@ violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   geom_half_violin(side = "l", trim = TRUE, color = NA) +
   geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
   geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
-  geom_text(data = SES_mean, aes(x = precip, y = label_text, label = label_text), y = 2, vjust = -1, size = 3.5) +
+  geom_text(data = SES_mean, aes(x = precip, y = label_text, label = label_text), y = 1.9, vjust = -1, size = 3.5) +
   stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "black", linewidth = 1) +
   facet_wrap(~ trait, scales = "free", ncol = 2) + # Facet by trait
   scale_fill_manual(values = c("#c6dbef", "#6baed6", "#08519c", "grey")) +
@@ -255,7 +256,7 @@ violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12)) +
   ylim(-2.62, 2.62) # otherwise ylim(-5,5)
 
-# print 1000 x 1200
+# print 800 x 1000
 
 #_______________________________________________________________________________ violin plots for all traits and across sites
 #multi_bp <- ggplot(SES_sites, aes(x = trait, y = SES, group = trait)) + geom_violin(aes(fill = trait), trim = T) +
@@ -304,7 +305,7 @@ violin_plot <- ggplot(data_combined, aes(x = precip, y = trait_mean, fill = prec
   theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12))
   #ylim(-2.62, 2.62) # otherwise ylim(-5,5)
 
-# print 1000 x 1200
+# print 800 x 1000
 
 site_comp <- site_comp %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Gudmedalen" ~ "Gud"),
                                   comp2 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Skjelingahaugen" ~ "Skj"),
