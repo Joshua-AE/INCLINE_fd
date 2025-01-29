@@ -108,23 +108,23 @@ sp_tables <- sp_tables %>% bind_rows(data_all_sites)
 sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "low", sp_tables$siteID == "Gudmedalen" ~ "medium",
                                  sp_tables$siteID == "Skjelingahaugen" ~ "high", sp_tables$siteID == "overall" ~ "overall")
 sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall"))) %>% select(-c(siteID))
-sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
 
-#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina")))
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina")))
 
 points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
-  scale_size_continuous(range = c(0.5,8), breaks = c(0.1, 1, 2, 3)) + # c(1, 10)
+  scale_size_continuous(range = c(0.5,6), breaks = c(0.1, 1, 2, 3)) + # c(1, 10)
   scale_y_discrete(limits = rev(levels(sp_tables$species))) + theme_classic() +
   labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) +
   geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
-  facet_wrap(~ trait, ncol = 5) + # scales = "free"
-  annotate("text", x = 4.3, y = 8.7, label = "Alpine 🡺" , angle = 90, size = 4) + # "Forbs 🡺"
-  annotate("text", x = 4.3, y = 3.7, label = "Generalist", angle = 90, size = 4) + # "🡸 Graminoids" # or just "Graminoids"
+  facet_wrap(~ trait, ncol = 4) + # scales = "free"
+  annotate("text", x = 4.3, y = 8.7, label = "Forbs 🡺" , angle = 90, size = 4) + # "Alpine 🡺"
+  annotate("text", x = 4.3, y = 3.7, label = "Graminoids", angle = 90, size = 4) + # "🡸 Generalist" # or just "Graminoids"
   annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.2) +
   theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"),
         axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
-# print 1200 x 800
+# print 800 x 1000
 # Helpful Unicode tables for arrows: https://en.wikipedia.org/wiki/Arrow_(symbol)
 
 
