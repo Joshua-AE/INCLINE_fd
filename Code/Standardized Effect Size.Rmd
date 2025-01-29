@@ -131,6 +131,18 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
 rm(sp_tables, data_all_sites)
 ```
 
+# Does Cmean influence d?
+```{r}
+traits_f <- traits_f %>% mutate(siteID = factor(siteID, levels = c("Ulvehaugen", "Gudmedalen", "Skjelingahaugen")))
+
+cor_plots <- ggplot(traits_f, aes(x = C_mean, y = SES, color = siteID)) + geom_point() +
+  facet_wrap(~ trait, ncol = 4, scales = "free_x") +
+  theme_classic() +
+  theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),legend.position = "top") +
+  geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
+  scale_color_manual(values = c("#c6dbef", "#6baed6", "#08519c"))
+```
+
 # Testing for differences using t-tests and f-tests
 ```{r}
 classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
