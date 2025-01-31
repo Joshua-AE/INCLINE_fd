@@ -88,6 +88,13 @@ traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait
 rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
 
+# Sorting species by Ellenberg-type indicator values (Moisture)
+```{r}
+#Read excl
+# left join
+# sort
+```
+
 #Species trait tables
 ```{r}
 #n_obs <- traits4 %>% filter(!is.na(SES)) %>% group_by(siteID, trait) %>% mutate(n_obs = n()) %>% sample_n(1) %>% select(siteID, trait, n_obs)
