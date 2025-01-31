@@ -90,6 +90,9 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 
 # Sorting species by Ellenberg-type indicator values (Moisture)
 ```{r}
+# Sources: https://onlinelibrary.wiley.com/doi/full/10.1111/jvs.13168
+# https://floraveg.eu/download/
+
 #Read excl
 # left join
 # sort
