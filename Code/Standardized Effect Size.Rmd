@@ -94,8 +94,11 @@ rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C
 # https://floraveg.eu/download/
 
 #Read excl
-# left join
-# sort
+etiv <- readr::read_tsv("../Input data/Ellenberg_disturbance.txt", guess_max = Inf) # Ellenberg-type indicator values
+etiv$taxon_simpl <- str_replace_all(etiv$TaxonName, " aggr.", "")
+sp_moisture <- traits_f %>% ungroup() %>% select(species) %>% unique() %>% left_join(etiv[,c(25,6)], by = c("species" = "taxon_simpl"))
+# Scorzoneroides autumnalis instead of Leontodon autumnalis. Mismachted, but moisture == 5.5
+sp_moisture[sp_moisture$species == "Leontodon autumnalis", "Moisture"] <- "5.5" # X means species is indifferent to that factor
 ```
 
 #Species trait tables
@@ -161,12 +164,15 @@ classification$Type <- case_when(str_detect(classification$species, "Agrostis|An
 # comparison alpine vs generalist species and graminoids vs. Forbs
 SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species")
 #SES_compare$SES <- abs(SES_compare$SES) # Optional. Depending if you want to compare actual or absolute SES values
-t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(alpine), data = .)) %>% ungroup()
+t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(Type), data = .)) %>% ungroup()
 
-p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
-test <- SES_compare %>% group_by(trait, alpine) %>% summarize(mean = mean(abs(SES))) # shows trait means by group
-
-print(p_values)
+mean_test_results <- t_test_results %>% mutate(
+                     t_statistic = sapply(t_test, function(x) x$statistic), # t-statistic
+                     df = sapply(t_test, function(x) x$parameter[1]),
+                     estimate1 = sapply(t_test, function(x) x$estimate[1]),
+                     estimate2 = sapply(t_test, function(x) x$estimate[2]),
+                     p_value = sapply(t_test, function(x) x$p.value)) %>%
+    select(trait, t_statistic, df, estimate1, estimate2, p_value) 
 
 var_test_results <- SES_compare %>% do(var_test = var.test(SES ~ factor(alpine, levels = c(1, 0)), data = .)) %>% ungroup() # alternatively: factor(alpine, levels = c(0, 1))
 var_test_summary <- var_test_results %>% mutate(
@@ -203,16 +209,16 @@ SES_lim <- traits_f %>% select(siteID, species, trait, SES) %>% group_by(species
 SES_lim <- SES_lim %>% summarize(total = n(), limit_1 = sum(abs(SES) >= 1), limit_08 = sum(abs(SES) >= 0.8), limit_05 = sum(abs(SES) >= 0.5))
 SES_lim <- SES_lim %>% left_join(classification[,1:4], by = "species") %>% mutate(alpine = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist")))
 
-alp_gen <- SES_lim %>% group_by(Type) %>% summarize(across(2:5, sum))
+alp_gen <- SES_lim %>% group_by(alpine) %>% summarize(across(2:5, sum))
 alp_gen <- alp_gen %>% mutate(limit_08 = limit_08 - limit_1, limit_05 = limit_05 - (limit_08 + limit_1),
                               total = total - (limit_05 + limit_08 + limit_1)) %>%
            pivot_longer(cols = 2:5, names_to = "Category", values_to = "Value") %>% ungroup() # changing counts so that each column contains only the surplus
 alp_gen$Category <- factor(alp_gen$Category, levels = c("total", "limit_05", "limit_08", "limit_1"))
 
-bar_plot <- ggplot(alp_gen, aes(x = Type, y = Value, fill = Category)) +
+bar_plot2 <- ggplot(alp_gen, aes(x = alpine, y = Value, fill = Category)) +
   geom_bar(stat = "identity", width = 0.7, color = "black") + # or position = "dodge" # or without position and alpha, as stacked graph # 
   scale_fill_manual(values = c("white", "lightgrey", "darkgrey", "black"), labels = c("SES < 0.5", "SES \u2265 0.5", "SES \u2265 0.8", "SES \u2265 1")) +
-  facet_wrap(~ Type, scales = "free", ncol = 2) +
+  facet_wrap(~ alpine, scales = "free", ncol = 2) +
   labs(title = NULL, x = "", y = "Number of paired observations") +
   theme_classic() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) # print 400 x 400
 
@@ -223,22 +229,22 @@ hist_table <- traits_f %>% ungroup() %>% select(species, SES) %>% left_join(clas
   mutate(Group = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist")))
 hist_table$Type <- factor(hist_table$Type, levels = c("Forbs", "Graminoids"))
 
-percentiles <- aggregate(SES ~ Type, data = hist_table, function(x) c(mean = mean(x), Q05 = quantile(x, 0.05), Q95 = quantile(x, 0.95)))
+percentiles <- aggregate(SES ~ Group, data = hist_table, function(x) c(mean = mean(x), Q05 = quantile(x, 0.05), Q95 = quantile(x, 0.95)))
 percentiles <- do.call(data.frame, percentiles) # Flatten the nested columns
 colnames(percentiles) <- c("Group", "mean", "Q05", "Q95")
 
-hist_plot <- ggplot(hist_table, aes(x = SES, fill = Type)) +
+hist_plot2 <- ggplot(hist_table, aes(x = SES, fill = Group)) +
   geom_histogram(position = "identity", alpha = 0.5, bins = 30, color = "black") +
   geom_vline(data = percentiles, aes(xintercept = mean), linetype = "dashed", linewidth = 1, color = c("black", "red")) +
-  geom_vline(data = percentiles, aes(xintercept = Q05, color = Type), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
-  geom_vline(data = percentiles, aes(xintercept = Q95, color = Type), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
+  geom_vline(data = percentiles, aes(xintercept = Q05, color = Group), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
+  geom_vline(data = percentiles, aes(xintercept = Q95, color = Group), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
   scale_fill_manual(values = c("darkgrey", "red")) +
   scale_color_manual(values = c("darkgrey", "red")) +
   labs(title = NULL, x = "Cohen's d", y = "Number of paired observations") +
   theme_classic() +
   theme(legend.position = "top")
 
-combined_plot <- plot_grid(hist_plot, bar_plot, labels = c("a", "b"), ncol = 2, align = "h", axis =  "tb", rel_widths = c(3, 2)) # print 850 x 400
+combined_plot <- plot_grid(hist_plot2, bar_plot2, hist_plot, bar_plot, labels = c("a", "b", "c", "d"), ncol = 2, align = "h", axis =  "tb", rel_widths = c(3, 2)) # print 850 x 800 or 850 x 400
 ```
 
 # Plotting SES values: Violin plots
