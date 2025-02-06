@@ -12,6 +12,7 @@ library("ie2misc") # madstat mean absolute deviation
 library("ggplot2")
 library("gghalves")
 library("cowplot")
+library("ggpmisc") # adds stat_poly_eq to regression in ggplot
 ```
 
 # Re-arranging data frame and computing Cohen's d
@@ -78,8 +79,12 @@ traits4$SES <- (traits4$OTC_mean - traits4$C_mean) / traits4$pooled_SD # Cohen's
 
 traits4$PR <- (traits4$OTC_mean - traits4$C_mean) / traits4$C_mean # Relative Distance Plasticity Index: shows the factor by which the trait value in the OTC increased or decreased, in comparison to the control plot
 
-traits4$trait <- case_when(traits4$trait == "leaf_area_cm2" ~ "LA", traits4$trait == "leaf_thickness_mm" ~ "LTH", traits4$trait == "sla_cm2_g" ~ "SLA", traits4$trait == "plant_height_cm" ~ "H", traits4$trait == "ldmc" ~ "LDMC", traits4$trait == "c_n" ~ "C:N", traits4$trait == "c_percent" ~ "C %", traits4$trait == "d13c" ~ "δ13C", traits4$trait == "d15n" ~ "δ15N", traits4$trait == "n_percent" ~ "N %")
+traits4$trait <- case_when(traits4$trait == "leaf_area_cm2" ~ "LA", traits4$trait == "leaf_thickness_mm" ~ "LTH", traits4$trait == "sla_cm2_g" ~ "SLA", traits4$trait == "plant_height_cm" ~ "H", traits4$trait == "ldmc" ~ "LDMC", traits4$trait == "c_n" ~ "C:N", traits4$trait == "c_percent" ~ "LCC", traits4$trait == "d13c" ~ "δ13C", traits4$trait == "d15n" ~ "δ15N", traits4$trait == "n_percent" ~ "LNC")
 
+traits4 <- traits4 %>% mutate(trait = factor(trait, levels = c("H", "LA", "LTH", "LDMC", "SLA", "LCC", "LNC", "C:N", "δ13C", "δ15N")))
+
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", 
+                                                                       
 traits_f <- traits4 %>% filter(!is.na(SES)) %>% group_by(trait) %>% mutate(trait_mean = mean(SES), trait_sd = sd(SES)) # trait table filtered
 traits_f$outlier3 <- case_when(traits_f$SES <= traits_f$trait_mean - 3* traits_f$trait_sd ~ "low",
                                traits_f$SES >= traits_f$trait_mean + 3* traits_f$trait_sd ~ "high") # 6 outliers +- 3 sd away from the mean removed
@@ -121,9 +126,9 @@ sp_tables <- sp_tables %>% bind_rows(data_all_sites)
 sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "low", sp_tables$siteID == "Gudmedalen" ~ "medium",
                                  sp_tables$siteID == "Skjelingahaugen" ~ "high", sp_tables$siteID == "overall" ~ "overall")
 sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall"))) %>% select(-c(siteID))
-#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta")))
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta"))) # GENERALIST V ALPINE
 
-sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina")))
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina"))) # GRAMINOIDS V FORBS
 
 points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
@@ -132,28 +137,39 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
   labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) +
   geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
   facet_wrap(~ trait, ncol = 4) + # scales = "free"
-  annotate("text", x = 4.3, y = 8.7, label = "Forbs 🡺" , angle = 90, size = 4) + # "Alpine 🡺"
-  annotate("text", x = 4.3, y = 3.7, label = "Graminoids", angle = 90, size = 4) + # "🡸 Generalist" # or just "Graminoids"
+  annotate("text", x = 4.3, y = 8.7, label = "Alpine 🡺" , angle = 90, size = 4) + # "Forbs 🡺"
+  annotate("text", x = 4.3, y = 3.7, label = "Generalist", angle = 90, size = 4) + # "🡸 Graminoids" # or just "Graminoids"
   annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.2) +
   theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"),
         axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1))
 # print 800 x 1000
 # Helpful Unicode tables for arrows: https://en.wikipedia.org/wiki/Arrow_(symbol)
 
-
-rm(sp_tables, data_all_sites)
+rm(sp_tables, data_all_sites, points_plot)
 ```
 
 # Does Cmean influence d?
 ```{r}
-traits_f <- traits_f %>% mutate(siteID = factor(siteID, levels = c("Ulvehaugen", "Gudmedalen", "Skjelingahaugen")))
+traits_cor <- traits_f %>% mutate(siteID = factor(siteID, levels = c("Ulvehaugen", "Gudmedalen", "Skjelingahaugen")))
 
-cor_plots <- ggplot(traits_f, aes(x = C_mean, y = SES, color = siteID)) + geom_point() +
-  facet_wrap(~ trait, ncol = 4, scales = "free_x") +
+traits_cor <- traits_cor %>% mutate(trait = factor(trait,
+              levels = c("H", "LA", "LTH", "LDMC", "SLA", "LCC", "LNC", "C:N", "δ13C", "δ15N"),
+              labels = c(expression(paste("H [cm]")), expression(paste("LA [cm"^2*"]")), expression(paste("LTH [mm]")), expression(paste("LDMC [mg g"^-1*"]")), expression(paste("SLA [cm"^2*" g"^-1*"]")), expression(paste("LCC [%]")), expression(paste("LNC [%]")), expression(paste("C:N Ratio")), expression(paste("δ13C [‰]")), expression(paste("δ15N [‰]")))))
+
+cor_plots <- ggplot(traits_cor, aes(x = C_mean, y = SES)) + geom_point(aes(color = siteID)) +
+  facet_wrap(~ trait, ncol = 4, scales = "free_x", labeller = label_parsed) +
   theme_classic() +
-  theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),legend.position = "top") +
+  theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 1), legend.position = "top") +
+  labs(title = NULL, x = "Control trait mean", y = "Cohen's d") +
   geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
-  scale_color_manual(values = c("#c6dbef", "#6baed6", "#08519c"))
+  scale_color_manual(values = c("#c6dbef", "#6baed6", "#08519c")) +
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "solid") +  # Add regression line with confidence interval
+  stat_poly_eq(
+    aes(label = after_stat(paste(eq.label, p.value.label, sep = "*\", \"*"))),
+    formula = y ~ x, parse = TRUE, size = 3) # Include p-value
+# print 800 x 600
+
+rm(traits_cor, cor_plots)
 ```
 
 # Testing for differences using t-tests and f-tests
@@ -285,7 +301,7 @@ violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   ylim(-2.62, 2.62) # otherwise ylim(-5,5)
 
 # print 800 x 1000
-
+rm(SES_sites, data_all_sites, SES_combined, SES_mean, violin_plot, t_tests)
 #_______________________________________________________________________________ violin plots for all traits and across sites
 #multi_bp <- ggplot(SES_sites, aes(x = trait, y = SES, group = trait)) + geom_violin(aes(fill = trait), trim = T) +
 #  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) + stat_summary(fun.data = "mean_cl_boot", geom = "pointrange",
@@ -307,7 +323,11 @@ violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
 site_comp <- traits %>% filter(warming == "C") %>% group_by(siteID, species, trait) %>%
              summarize(trait_mean = mean(value)) %>% ungroup() # site comparisons. 23 trait measurements missing.
 
-site_comp$trait <- case_when(site_comp$trait == "leaf_area_cm2" ~ "LA", site_comp$trait == "leaf_thickness_mm" ~ "LTH", site_comp$trait == "sla_cm2_g" ~ "SLA", site_comp$trait == "plant_height_cm" ~ "H", site_comp$trait == "ldmc" ~ "LDMC", site_comp$trait == "c_n" ~ "C:N", site_comp$trait == "c_percent" ~ "C %", site_comp$trait == "d13c" ~ "δ13C", site_comp$trait == "d15n" ~ "δ15N", site_comp$trait == "n_percent" ~ "N %")
+site_comp$trait <- case_when(site_comp$trait == "leaf_area_cm2" ~ "LA", site_comp$trait == "leaf_thickness_mm" ~ "LTH", site_comp$trait == "sla_cm2_g" ~ "SLA", site_comp$trait == "plant_height_cm" ~ "H", site_comp$trait == "ldmc" ~ "LDMC", site_comp$trait == "c_n" ~ "C:N", site_comp$trait == "c_percent" ~ "LCC", site_comp$trait == "d13c" ~ "δ13C", site_comp$trait == "d15n" ~ "δ15N", site_comp$trait == "n_percent" ~ "LNC")
+
+site_comp <- site_comp %>% mutate(trait = factor(trait,
+              levels = c("H", "LA", "LTH", "LDMC", "SLA", "LCC", "LNC", "C:N", "δ13C", "δ15N"),
+              labels = c(expression(paste("H [cm]")), expression(paste("LA [cm"^2*"]")), expression(paste("LTH [mm]")), expression(paste("LDMC [mg g"^-1*"]")), expression(paste("SLA [cm"^2*" g"^-1*"]")), expression(paste("LCC [%]")), expression(paste("LNC [%]")), expression(paste("C:N Ratio")), expression(paste("δ13C [‰]")), expression(paste("δ15N [‰]")))))
 
 site_comp <- site_comp %>% group_by(species, trait) %>% mutate(Freq = n()) %>% ungroup()
 site_comp <- site_comp %>% filter(Freq == 3) %>% select(-c(Freq)) # filtering out incomplete trait measurements (not in all 3 sites)
@@ -326,7 +346,7 @@ violin_plot <- ggplot(data_combined, aes(x = precip, y = trait_mean, fill = prec
   geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
   geom_hline(data = filter(mean_across, precip == "overall"), aes(yintercept = overall_mean), lty = 2, linewidth = 0.25) +
   stat_summary(fun.data = "mean_cl_boot", geom = "pointrange", colour = "black", linewidth = 1) +
-  facet_wrap(~ trait, scales = "free", ncol = 2) + # Facet by trait
+  facet_wrap(~ trait, scales = "free", ncol = 2, labeller = label_parsed) + # Facet by trait
   scale_fill_manual(values = c("#c6dbef", "#6baed6", "#08519c", "grey")) +
   theme_classic() +
   labs(title = NULL, x = "Precipitation", y = "Trait means") +
@@ -346,7 +366,7 @@ test <- comp1 %>% group_by(trait, comp1) %>% summarize(mean = mean(trait_mean)) 
 
 print(p_values)
 # Significant differences: Ulv Gud only D13C, p = 0.05397769
-# Ulv Skj only C % p = 0.01907241	
+# Ulv Skj only LCC p = 0.01907241	
 # Gud Skj H p = 0.00504747
 rm(mean_across, data_combined, data_all_sites, test)
 ```
@@ -362,7 +382,7 @@ SES_sites$level <- case_when(SES_sites$`mean SES` < 0 ~ "negative", SES_sites$`m
 test <- SES_sites %>% group_by(trait) %>% mutate(mean_trait = mean(`mean SES`)) %>% sample_n(1) %>% select(c(trait, mean_trait))
 
 SES_sites$siteID <- factor(SES_sites$siteID, levels = c("Ulvehaugen", "Gudmedalen", "Skjelingahaugen"))
-SES_sites$trait <- factor(SES_sites$trait, levels = c("C %", "N %", "C:N", "δ13C", "δ15N", "H", "LA", "LDMC", "LTH", "SLA"))
+SES_sites$trait <- factor(SES_sites$trait, levels = c("LCC", "LNC", "C:N", "δ13C", "δ15N", "H", "LA", "LDMC", "LTH", "SLA"))
 
 SES_plot <- ggplot(SES_sites, aes(x = siteID, y = `mean SES`, shape = level)) +  
   geom_point(size = 3) +
