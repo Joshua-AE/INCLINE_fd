@@ -225,18 +225,18 @@ SES_lim <- traits_f %>% select(siteID, species, trait, SES) %>% group_by(species
 SES_lim <- SES_lim %>% summarize(total = n(), limit_1 = sum(abs(SES) >= 1), limit_08 = sum(abs(SES) >= 0.8), limit_05 = sum(abs(SES) >= 0.5))
 SES_lim <- SES_lim %>% left_join(classification[,1:4], by = "species") %>% mutate(alpine = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist")))
 
-alp_gen <- SES_lim %>% group_by(alpine) %>% summarize(across(2:5, sum))
+alp_gen <- SES_lim %>% group_by(Type) %>% summarize(across(2:5, sum))
 alp_gen <- alp_gen %>% mutate(limit_08 = limit_08 - limit_1, limit_05 = limit_05 - (limit_08 + limit_1),
                               total = total - (limit_05 + limit_08 + limit_1)) %>%
            pivot_longer(cols = 2:5, names_to = "Category", values_to = "Value") %>% ungroup() # changing counts so that each column contains only the surplus
 alp_gen$Category <- factor(alp_gen$Category, levels = c("total", "limit_05", "limit_08", "limit_1"))
 
-bar_plot2 <- ggplot(alp_gen, aes(x = alpine, y = Value, fill = Category)) +
-  geom_bar(stat = "identity", width = 0.7, color = "black") + # or position = "dodge" # or without position and alpha, as stacked graph # 
+bar_plot <- ggplot(alp_gen, aes(x = Type, y = Value, fill = Category)) +
+  geom_bar(stat = "identity", width = 0.7, color = "black") + # or position = "dodge" # or without position and alpha, as stacked graph
   scale_fill_manual(values = c("white", "lightgrey", "darkgrey", "black"), labels = c("SES < 0.5", "SES \u2265 0.5", "SES \u2265 0.8", "SES \u2265 1")) +
-  facet_wrap(~ alpine, scales = "free", ncol = 2) +
-  labs(title = NULL, x = "", y = "Number of paired observations") +
-  theme_classic() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) # print 400 x 400
+  facet_wrap(~ Type, scales = "free", ncol = 2) +
+  labs(title = NULL, x = "", y = "Number of effect sizes") +
+  theme_classic() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), text = element_text(size = 14)) # print 400 x 400
 
 #SES_lim$fraction <- SES_lim$sum_SES05/SES_lim$total # the fraction is important because there are more alpine than generalist species
 
@@ -245,22 +245,22 @@ hist_table <- traits_f %>% ungroup() %>% select(species, SES) %>% left_join(clas
   mutate(Group = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist")))
 hist_table$Type <- factor(hist_table$Type, levels = c("Forbs", "Graminoids"))
 
-percentiles <- aggregate(SES ~ Group, data = hist_table, function(x) c(mean = mean(x), Q05 = quantile(x, 0.05), Q95 = quantile(x, 0.95)))
+percentiles <- aggregate(SES ~ Type, data = hist_table, function(x) c(mean = mean(x), Q05 = quantile(x, 0.05), Q95 = quantile(x, 0.95)))
 percentiles <- do.call(data.frame, percentiles) # Flatten the nested columns
-colnames(percentiles) <- c("Group", "mean", "Q05", "Q95")
+colnames(percentiles) <- c("Type", "mean", "Q05", "Q95")
 
-hist_plot2 <- ggplot(hist_table, aes(x = SES, fill = Group)) +
+hist_plot <- ggplot(hist_table, aes(x = SES, fill = Type)) +
   geom_histogram(position = "identity", alpha = 0.5, bins = 30, color = "black") +
   geom_vline(data = percentiles, aes(xintercept = mean), linetype = "dashed", linewidth = 1, color = c("black", "red")) +
-  geom_vline(data = percentiles, aes(xintercept = Q05, color = Group), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
-  geom_vline(data = percentiles, aes(xintercept = Q95, color = Group), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
+  geom_vline(data = percentiles, aes(xintercept = Q05, color = Type), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
+  geom_vline(data = percentiles, aes(xintercept = Q95, color = Type), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
   scale_fill_manual(values = c("darkgrey", "red")) +
   scale_color_manual(values = c("darkgrey", "red")) +
-  labs(title = NULL, x = "Cohen's d", y = "Number of paired observations") +
+  labs(title = NULL, x = "Cohen's d", y = "Number of effect sizes") +
   theme_classic() +
-  theme(legend.position = "top")
+  theme(legend.position = "top", text = element_text(size = 14))
 
-combined_plot <- plot_grid(hist_plot2, bar_plot2, hist_plot, bar_plot, labels = c("a", "b", "c", "d"), ncol = 2, align = "h", axis =  "tb", rel_widths = c(3, 2)) # print 850 x 800 or 850 x 400
+combined_plot <- plot_grid(hist_plot2, bar_plot2, hist_plot, bar_plot, labels = c("a", "b", "c", "d"), ncol = 2, align = "h", axis =  "tb", rel_widths = c(1,1)) # print 800 x 500
 ```
 
 # Plotting SES values: Violin plots
