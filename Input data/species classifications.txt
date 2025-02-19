@@ -6,7 +6,7 @@ Anthoxanthum odoratum	0	1
 Bistorta vivipara	1	0
 Campanula rotundifolia	0	1
 Carex bigelowii	1	0
-Carex vaginata	0	1
+Carex vaginata	1	0
 Festuca rubra	0	1
 Leontodon autumnalis	0	1
 Poa alpina	1	0

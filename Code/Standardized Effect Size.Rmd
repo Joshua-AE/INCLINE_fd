@@ -13,6 +13,7 @@ library("ggplot2")
 library("gghalves")
 library("cowplot")
 library("ggpmisc") # adds stat_poly_eq to regression in ggplot
+library("car") # for leveneTest (variance equality)
 ```
 
 # Re-arranging data frame and computing Cohen's d
@@ -93,17 +94,38 @@ traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait
 rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
 
-# Sorting species by Ellenberg-type indicator values (Moisture)
+# Sorting species by Ellenberg-type indicator values (Moisture) or MAT from Lynn et al.
 ```{r}
 # Sources: https://onlinelibrary.wiley.com/doi/full/10.1111/jvs.13168
 # https://floraveg.eu/download/
 
-#Read excl
-etiv <- readr::read_tsv("../Input data/Ellenberg_disturbance.txt", guess_max = Inf) # Ellenberg-type indicator values
-etiv$taxon_simpl <- str_replace_all(etiv$TaxonName, " aggr.", "")
-sp_moisture <- traits_f %>% ungroup() %>% select(species) %>% unique() %>% left_join(etiv[,c(25,6)], by = c("species" = "taxon_simpl"))
+#etiv <- readr::read_tsv("../Input data/Ellenberg_disturbance.txt", guess_max = Inf) # Ellenberg-type indicator values
+#etiv$taxon_simpl <- str_replace_all(etiv$TaxonName, " aggr.", "")
+
+classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
+classification$Type <- case_when(str_detect(classification$species, "Agrostis|Anthoxanthum|Carex|Festuca|Poa|Avenella|Deschampsia|Nardus") ~ "Graminoids", TRUE ~ "Forbs")
+
+MAT <- readr::read_tsv("../Input data/MAT Lynn et al.txt")
+MAT <- as.data.frame(MAT)
+traits_MAT <- traits_f %>% ungroup() %>% left_join(MAT, by = "species")
+traits_MAT <- traits_MAT %>% mutate(siteID = factor(siteID, levels = c("Ulvehaugen", "Gudmedalen", "Skjelingahaugen")))
+traits_MAT <- filter(traits_MAT, !c(siteID == "Ulvehaugen" & trait == "δ13C"))
+traits_MAT <- traits_MAT %>% left_join(classification, by = "species")
+#sp_moisture <- traits_f %>% ungroup() %>% select(species) %>% unique() %>% left_join(etiv[,c(25,6)], by = c("species" = "taxon_simpl"))
 # Scorzoneroides autumnalis instead of Leontodon autumnalis. Mismachted, but moisture == 5.5
-sp_moisture[sp_moisture$species == "Leontodon autumnalis", "Moisture"] <- "5.5" # X means species is indifferent to that factor
+#sp_moisture[sp_moisture$species == "Leontodon autumnalis", "Moisture"] <- "5.5" # X means species is indifferent to that factor
+
+cor_plots <- ggplot(traits_MAT, aes(x = MAT_C, y = SES)) + geom_point(aes(color = Type)) +
+  facet_wrap(~ trait, ncol = 4, scales = "free_x", labeller = label_parsed) +
+  theme_classic() +
+  theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 1), legend.position = "top") +
+  labs(title = NULL, x = "Mean annual temperature [°C]", y = "Cohen's d") +
+  geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
+  #scale_color_manual(values = c("#c6dbef", "#6baed6", "#08519c")) +
+  geom_smooth(aes(color = Type), method = "lm", se = TRUE, linetype = "solid") +  # Add regression line with confidence interval, alternative: no aes and color = "black"
+  stat_poly_eq(aes(label = after_stat(paste(eq.label, p.value.label, sep = "*\", \"*")), color = Type),
+    formula = y ~ x, parse = TRUE, size = 3) # Include p-value
+# print 800 x 600
 ```
 
 #Species trait tables
@@ -126,6 +148,9 @@ sp_tables <- sp_tables %>% bind_rows(data_all_sites)
 sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "low", sp_tables$siteID == "Gudmedalen" ~ "medium",
                                  sp_tables$siteID == "Skjelingahaugen" ~ "high", sp_tables$siteID == "overall" ~ "overall")
 sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall"))) %>% select(-c(siteID))
+
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Veronica alpina", "Sibbaldia procumbens", "Salix herbacea", "Astragalus alpinus", "Carex bigelowii", "Viola biflora", "Saussurea alpina", "Thalictrum alpinum", "Poa alpina", "Alchemilla alpina", "Bistorta vivipara", "Carex vaginata", "Nardus stricta", "Campanula rotundifolia", "Anthoxanthum odoratum", "Agrostis capillaris", "Leontodon autumnalis"))) # SORTED BY MEAN ANNUAL GROWING TEMPERATURE FOR THE GEOGRAPHIC RANGE FROM LYNN
+
 sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta"))) # GENERALIST V ALPINE
 
 sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum odoratum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina"))) # GRAMINOIDS V FORBS
@@ -135,10 +160,11 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
   scale_size_continuous(range = c(0.5,6), breaks = c(0.1, 1, 2, 3)) + # c(1, 10)
   scale_y_discrete(limits = rev(levels(sp_tables$species))) + theme_classic() +
   labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) +
-  geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
+  geom_hline(aes(yintercept = 5.5), lty = 1, linewidth = 0.25) + geom_hline(aes(yintercept = 9.5), lty = 2, linewidth = 0.25) + # Before yintercept = 6.5
   facet_wrap(~ trait, ncol = 4) + # scales = "free"
-  annotate("text", x = 4.3, y = 8.7, label = "Forbs 🡺" , angle = 90, size = 4) + # "Alpine 🡺"
-  annotate("text", x = 4.3, y = 3.7, label = "Graminoids", angle = 90, size = 4) + # "🡸 Generalist" # or just "Graminoids"
+  annotate("text", x = 4.3, y = 11, label = "< 1°C", angle = 90, size = 4) + # y = 8.7, label = "Forbs 🡺"
+  annotate("text", x = 4.3, y = 7, label = "< 3°C", angle = 90, size = 4) + # "🡸 Generalist" | y = 3.7, label = "Graminoids"
+  annotate("text", x = 4.3, y = 3, label = "MAT", angle = 90, size = 4) +
   annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.2) +
   theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"),
         axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
@@ -181,7 +207,15 @@ classification$Type <- case_when(str_detect(classification$species, "Agrostis|An
 # comparison alpine vs generalist species and graminoids vs. Forbs
 SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species")
 #SES_compare$SES <- abs(SES_compare$SES) # Optional. Depending if you want to compare actual or absolute SES values
-t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(Type), data = .)) %>% ungroup()
+
+#Checking t-test assumptions (normality and equal variances)
+norm_test <- SES_compare %>% group_by(trait, as.factor(Type)) %>% summarise(p_value = shapiro.test(SES)$p.value) # no violations of normal distribution at p < 0.5
+norm_plots <- ggplot(SES_compare, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + Type) # qq-plot visual inspection
+var_test <- SES_compare %>% group_by(trait) %>% summarise(p_value = leveneTest(SES ~ as.factor(Type))$"Pr(>F)"[1]) # no violations of equal variances
+# unequal variances in graminoids and herbs for LA, Lth and and D15N. For these traits, report Welch’s t-test (var.equal = FALSE)
+
+#Running t-tests
+t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(Type), data = ., var.equal = FALSE)) %>% ungroup() # change var.equal
 
 mean_test_results <- t_test_results %>% mutate(
                      t_statistic = sapply(t_test, function(x) x$statistic), # t-statistic
