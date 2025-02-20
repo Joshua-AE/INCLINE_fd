@@ -2,7 +2,7 @@ species	alpine	generalist
 Achillea millefolium	0	1
 Agrostis capillaris	0	1
 Alchemilla alpina	1	0
-Anthoxanthum odoratum	0	1
+Anthoxanthum alpinum	0	1
 Bistorta vivipara	1	0
 Campanula rotundifolia	0	1
 Carex bigelowii	1	0
