@@ -211,11 +211,11 @@ SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(cl
 #Checking t-test assumptions (normality and equal variances)
 norm_test <- SES_compare %>% group_by(trait, as.factor(Type)) %>% summarise(p_value = shapiro.test(SES)$p.value) # no violations of normal distribution at p < 0.5
 norm_plots <- ggplot(SES_compare, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + Type) # qq-plot visual inspection
-var_test <- SES_compare %>% group_by(trait) %>% summarise(p_value = leveneTest(SES ~ as.factor(Type))$"Pr(>F)"[1]) # no violations of equal variances
-# unequal variances in graminoids and herbs for LA, Lth and and D15N. For these traits, report Welch’s t-test (var.equal = FALSE)
+var_test <- SES_compare %>% group_by(trait) %>% summarise(p_value = var.test(SES ~ as.factor(Type))$p.value)
+# unequal variances in graminoids and herbs for LA, Lth, D15N and LDMC. For these traits, report Welch’s t-test (var.equal = FALSE)
 
 #Running t-tests
-t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(Type), data = ., var.equal = TRUE)) %>% ungroup() # change var.equal
+t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(Type), data = ., var.equal = FALSE)) %>% ungroup() # change var.equal
 
 mean_test_results <- t_test_results %>% mutate(
                      t_statistic = sapply(t_test, function(x) x$statistic), # t-statistic
@@ -310,6 +310,10 @@ SES_combined <- SES_combined %>% mutate(precip = factor(precip, levels = c("low"
 
 SES_mean <- SES_combined %>% group_by(precip, trait) %>% summarize(mean_SES = mean(SES), .groups = "drop")
 
+#Testing assumptions. If n > 30 t-test is not important
+norm_test <- SES_combined %>% group_by(trait, precip) %>% summarise(p_value = shapiro.test(SES)$p.value) # H and LDMC not normally distributed -> Wilcoxon signed-rank test
+norm_plots <- ggplot(SES_combined, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + precip) # qq-plot visual inspection
+
 # Are mean SES values significantly different from 0?
 t_tests <- SES_combined %>% select(-c(siteID, species)) %>% group_by(precip, trait) %>%
   summarise(t_test = list(t.test(SES, mu = 0)), .groups = "drop") %>%  # Perform t-test against 0
@@ -317,6 +321,13 @@ t_tests <- SES_combined %>% select(-c(siteID, species)) %>% group_by(precip, tra
          t_value = map_dbl(t_test, ~ .x$statistic),  # Extract t-statistic
          p_value = map_dbl(t_test, ~ .x$p.value)     # Extract p-value
   ) %>% select(-t_test)
+
+t_tests2 <- SES_combined %>% select(-c(siteID, species)) %>% group_by(precip, trait) %>%
+  summarise(wilcox_test = list(wilcox.test(SES, mu = 0)), .groups = "drop") %>%  # Perform Wilcoxon test against 0
+  mutate(estimate = map_dbl(wilcox_test, ~ median(SES_combined$SES)),  # Extract median SES (since Wilcoxon is non-parametric)
+         W_value = map_dbl(wilcox_test, ~ .x$statistic),  # Extract Wilcoxon test statistic (W)
+         p_value = map_dbl(wilcox_test, ~ .x$p.value)     # Extract p-value
+  ) %>% select(-wilcox_test)
 
 SES_mean <- left_join(SES_mean, t_tests[,c(1:2,5)], by = c("precip", "trait"))
 SES_mean <- SES_mean %>% mutate(significance = case_when(p_value < 0.05 ~ "🞲", p_value < 0.1  ~ "+", TRUE ~ ""),
@@ -389,6 +400,11 @@ violin_plot <- ggplot(data_combined, aes(x = precip, y = trait_mean, fill = prec
   #ylim(-2.62, 2.62) # otherwise ylim(-5,5)
 
 # print 800 x 1000
+
+# Assumption testing first
+norm_test <- SES_combined %>% group_by(trait, precip) %>% summarise(p_value = shapiro.test(SES)$p.value) # H and LDMC not normally distributed
+norm_plots <- ggplot(SES_combined, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + precip) # qq-plot visual inspection
+var_test <- SES_combined %>% group_by(trait) %>% summarise(p_value = leveneTest(SES ~ precip)$"Pr(>F)"[1]) # Levene Test, alternatively F-test using var.test
 
 site_comp <- site_comp %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Gudmedalen" ~ "Gud"),
                                   comp2 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Skjelingahaugen" ~ "Skj"),
