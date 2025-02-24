@@ -239,11 +239,21 @@ var_test_summary <- var_test_results %>% mutate(
 site_comp <- traits_f %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Gudmedalen" ~ "Gud"),
                                   comp2 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Skjelingahaugen" ~ "Skj"),
                                   comp3 = case_when(siteID == "Gudmedalen" ~ "Gud", siteID == "Skjelingahaugen" ~ "Skj"))
-comp2 <- site_comp %>% select(-c(comp1, comp3)) %>% na.omit() %>% group_by(trait)
-t_test_results <- comp3 %>% do(t_test = t.test(SES ~ as.factor(comp3), data = .)) %>% ungroup()
 
-p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
-test <- comp1 %>% group_by(trait, comp1) %>% summarize(mean = mean(trait_mean)) # shows trait means by group
+norm_test <- site_comp %>% group_by(trait, siteID) %>% summarise(p_value = shapiro.test(SES)$p.value) # non-normal distribution for H in Ulvehaugen and LDMC in Ulv and Skj
+norm_plots <- ggplot(site_comp, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + siteID) # qq-plot visual inspection
+
+comp2 <- site_comp %>% select(-c(comp3, comp1)) %>% na.omit() %>% group_by(trait)
+var_test <- comp2 %>% group_by(trait) %>% summarise(p_value = var.test(SES ~ as.factor(siteID))$p.value) # unequal variance only for D15N between Ulv:Skj / low:high
+
+t_test_results <- comp1 %>% do(t_test = t.test(SES ~ as.factor(comp1), data = ., var.equal = F)) %>% ungroup()
+w_test_results <- comp1 %>% do(w_test = wilcox.test(SES ~ as.factor(comp1), data = .)) %>% ungroup()
+
+wil_tests <- comp3 %>% summarise(wilcox_test = list(wilcox.test(SES ~ as.factor(comp3))), .groups = "drop") %>%
+  mutate(p_value = map_dbl(wilcox_test, ~ .x$p.value)) %>% select(-wilcox_test)
+
+p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value)
+#test <- comp1 %>% group_by(trait, comp1) %>% summarize(mean = mean(trait_mean)) # shows trait means by group
 
 print(p_values)
 
@@ -314,7 +324,7 @@ norm_plots <- ggplot(SES_combined, aes(sample = SES)) + geom_qq() + geom_qq_line
 
 # Are mean SES values significantly different from 0?
 t_tests <- SES_combined %>% select(-c(siteID, species)) %>% group_by(precip, trait) %>%
-  summarise(t_test = list(t.test(SES, mu = 0)), .groups = "drop") %>%  # Perform t-test against 0
+  summarise(t_test = list(t.test(SES, mu = 0, var.equal = F)), .groups = "drop") %>%  # Perform t-test against 0
   mutate(estimate = map_dbl(t_test, ~ .x$estimate),  # Extract mean SES
          t_value = map_dbl(t_test, ~ .x$statistic),  # Extract t-statistic
          p_value = map_dbl(t_test, ~ .x$p.value)     # Extract p-value
@@ -402,17 +412,23 @@ violin_plot <- ggplot(data_combined, aes(x = precip, y = trait_mean, fill = prec
 # print 800 x 1000
 
 # Assumption testing first
-norm_test <- SES_combined %>% group_by(trait, precip) %>% summarise(p_value = shapiro.test(SES)$p.value) # H and LDMC not normally distributed
-norm_plots <- ggplot(SES_combined, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + precip) # qq-plot visual inspection
-var_test <- SES_combined %>% group_by(trait) %>% summarise(p_value = leveneTest(SES ~ precip)$"Pr(>F)"[1]) # Levene Test, alternatively F-test using var.test
+norm_test <- site_comp %>% group_by(trait, precip) %>% summarise(p_value = shapiro.test(trait_mean)$p.value) # Many non-normally distributed
+norm_plots <- ggplot(site_comp, aes(sample = trait_mean)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + precip, scales = "free")
 
 site_comp <- site_comp %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Gudmedalen" ~ "Gud"),
                                   comp2 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Skjelingahaugen" ~ "Skj"),
                                   comp3 = case_when(siteID == "Gudmedalen" ~ "Gud", siteID == "Skjelingahaugen" ~ "Skj"))
-comp3 <- site_comp %>% select(-c(comp1, comp2)) %>% na.omit() %>% group_by(trait)
-t_test_results <- comp3 %>% do(t_test = t.test(trait_mean ~ as.factor(comp3), data = .)) %>% ungroup()
 
-p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value) 
+comp3 <- site_comp %>% select(-c(comp2, comp1)) %>% na.omit() %>% group_by(trait)
+var_test <- comp3 %>% group_by(trait) %>% summarise(p_value = leveneTest(trait_mean ~ as.factor(comp3))$"Pr(>F)"[1]) # non equal variance for SLA between Gud:Skj Medium:high
+
+t_test_results <- comp3 %>% do(t_test = t.test(trait_mean ~ as.factor(comp3), data = ., var.equal = T)) %>% ungroup()
+
+p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value)
+
+wil_tests <- comp3 %>% summarise(wilcox_test = list(wilcox.test(trait_mean ~ as.factor(comp3))), .groups = "drop") %>%
+  mutate(p_value = map_dbl(wilcox_test, ~ .x$p.value)) %>% select(-wilcox_test)
+
 test <- comp1 %>% group_by(trait, comp1) %>% summarize(mean = mean(trait_mean)) # shows trait means by group
 
 print(p_values)
