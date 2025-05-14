@@ -16,7 +16,7 @@ library("ggpmisc") # adds stat_poly_eq to regression in ggplot
 library("car") # for leveneTest (variance equality)
 ```
 
-# Re-arranging data frame and computing Cohen's d
+# Merging data and filtering species
 ```{r}
 raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
 chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
@@ -35,7 +35,50 @@ selected_sp <- unique(selected_sp$species)
 traits <- traits %>% filter(species %in% selected_sp) %>% mutate(species = ifelse(species == "Anthoxanthum odoratum", "Anthoxanthum alpinum", species))
 
 rm(chem_traits, raw_traits, selected_sp)
+```
 
+# Cluster analysis
+```{r}
+library("factoextra") # dist, fviz_dend
+library("NbClust") # NbClust
+library("psych") # pairs.panel
+library("ggfortify") # autoplot
+
+sp_mean_all5 <- traits %>% filter(trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
+                select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
+sp_mean_ctrl5 <- traits %>% filter(warming == "C" & trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
+                 select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
+
+mat <- sp_mean_all5 %>% pivot_wider(names_from = trait, values_from = mean_value) %>% column_to_rownames("species")
+
+mat <- scale(mat) # Standardize (center = 0, scale = 1)
+pairs.panels(mat, lm = TRUE, smooth = FALSE, ellipse = FALSE, method = "pearson", hist.col = 4, stars = TRUE)
+main_pcs <- prcomp(mat, center = F, scale. = F)
+autoplot(main_pcs, loadings = TRUE, loadings.colour = 'blue', loadings.label = TRUE)
+
+dist_euc <- dist(mat, method = "euclidean") # Compute distance matrix
+hclusters <- hclust(dist_euc, method = "ward.D2") # Hierarchical clustering
+
+fviz_dend(hclusters, cex = 0.8, k = 2, rect = TRUE) # print 600 x 900; no difference between sp_mean_all and sp_mean_ctrl for 2 clusters
+groups_hc <- cutree(hclusters, k = 2)
+print(groups_hc)
+
+# Alternative: k-means for K clusters
+set.seed(42)
+km.res <- kmeans(mat, centers = 3, nstart = 25)
+print(km.res$cluster) # at 3 groups, both methods show individual group for Saussurea alpina
+
+# Evaluating optimal K
+fviz_nbclust(mat, kmeans, method = "wss") + labs(subtitle = "Elbow method") # Elbow (total within‑sum of squares)
+fviz_nbclust(mat, kmeans, method = "silhouette") + labs(subtitle = "Silhouette method") # Average silhouette
+
+nc <- NbClust(mat, distance = "euclidean", min.nc = 2, max.nc = 4, method = "ward.D2") # NbClust comprehensive
+fviz_nbclust(nc)
+```
+
+
+# Computing Cohen's d
+```{r}
 # aggregated by site, block and experiment____________________________________________________________________________
 traits1 <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(mean))
 traits1 <- rename(traits1, mean_value = x)
