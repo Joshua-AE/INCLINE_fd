@@ -39,6 +39,7 @@ rm(chem_traits, raw_traits, selected_sp)
 
 # Cluster analysis
 ```{r}
+# tutorial and blog post by David Zeleny: https://www.davidzeleny.net/anadat-r/doku.php/en:hier-agglom_examples
 library("factoextra") # dist, fviz_dend
 library("NbClust") # NbClust
 library("psych") # pairs.panel
