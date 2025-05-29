@@ -60,7 +60,7 @@ autoplot(main_pcs, loadings = TRUE, loadings.colour = 'blue', loadings.label = T
 dist_euc <- dist(mat, method = "euclidean") # Compute distance matrix
 hclusters <- hclust(dist_euc, method = "ward.D2") # Hierarchical clustering
 
-fviz_dend(hclusters, cex = 0.8, k = 2, rect = TRUE) # print 600 x 900; no difference between sp_mean_all and sp_mean_ctrl for 2 clusters
+fviz_dend(hclusters, cex = 0.8, k = 2, rect = TRUE) # print 600 x 900
 groups_hc <- cutree(hclusters, k = 2)
 print(groups_hc)
 
