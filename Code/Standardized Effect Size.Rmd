@@ -182,8 +182,10 @@ species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES =
   pivot_wider(names_from = trait, values_from = mean_SES)
 species_SES_table$mean_overall <- rowMeans(abs(species_SES_table[,2:11]), na.rm = TRUE)
 
-trait_SES_table <- traits_f  %>% group_by(trait) %>% mutate(meanSES = mean(SES), absSES = mean(abs(SES)), nsamples = n()) %>%
+trait_SES_table <- traits_f %>% group_by(trait) %>% mutate(meanSES = mean(SES), absSES = mean(abs(SES)), nsamples = n()) %>%
                    sample_n(1) %>% ungroup() %>% select(c(trait, meanSES, absSES, nsamples))
+
+var_table <-  traits_f %>% group_by(species) %>% summarize(SES_var = var(SES), SES_sd = sd(SES))
 
 #_______________________________________________________________________________
 sp_tables <- traits_f  %>% select(siteID, species, trait, SES) #%>% filter(trait != "C:N")
@@ -243,6 +245,36 @@ cor_plots <- ggplot(traits_cor, aes(x = C_mean, y = SES)) + geom_point(aes(color
 rm(traits_cor, cor_plots)
 ```
 
+
+#  Testing for differences in variance between traits using f-tests
+```{r}
+trait_comp <- traits_f %>% mutate(trait = "overall") %>% rbind(traits_f)
+
+results <- data.frame(
+  trait = character(),
+  df_trait = integer(),
+  df_overall = integer(),
+  f_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE)
+
+# Loop through all traits except "overall"
+for(t in unique(trait_comp$trait[trait_comp$trait != "overall"])) {
+  ses_trait <- trait_comp$SES[trait_comp$trait == t]
+  ses_overall <- trait_comp$SES[trait_comp$trait == "overall"]
+  test <- var.test(ses_trait, ses_overall) # F-test for comparing variances
+  
+  results <- rbind(results, data.frame(
+    trait = t,
+    df_trait = test$parameter[1],
+    df_overall = test$parameter[2],
+    f_statistic = test$statistic,
+    p_value = test$p.value))}
+
+rm(ses_overall, ses_trait, t, trait_comp)
+```
+
+
 # Testing for differences using t-tests and f-tests
 ```{r}
 classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
@@ -287,8 +319,8 @@ site_comp <- traits_f %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv
 norm_test <- site_comp %>% group_by(trait, siteID) %>% summarise(p_value = shapiro.test(SES)$p.value) # non-normal distribution for H in Ulvehaugen and LDMC in Ulv and Skj
 norm_plots <- ggplot(site_comp, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + siteID) # qq-plot visual inspection
 
-comp2 <- site_comp %>% select(-c(comp3, comp1)) %>% na.omit() %>% group_by(trait)
-var_test <- comp2 %>% group_by(trait) %>% summarise(p_value = var.test(SES ~ as.factor(siteID))$p.value) # unequal variance only for D15N between Ulv:Skj / low:high
+comp3 <- site_comp %>% select(-c(comp2, comp1)) %>% na.omit() %>% group_by(trait)
+var_test <- comp3 %>% group_by(trait) %>% summarise(p_value = var.test(SES ~ as.factor(siteID))$p.value) # unequal variance only for D15N between Ulv:Skj / low:high
 
 t_test_results <- comp1 %>% do(t_test = t.test(SES ~ as.factor(comp1), data = ., var.equal = F)) %>% ungroup()
 w_test_results <- comp1 %>% do(w_test = wilcox.test(SES ~ as.factor(comp1), data = .)) %>% ungroup()
