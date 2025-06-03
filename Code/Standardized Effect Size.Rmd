@@ -45,12 +45,19 @@ library("NbClust") # NbClust
 library("psych") # pairs.panel
 library("ggfortify") # autoplot
 
+# tables of mean trait values per species, either all (all samples) or ctrl (only control samples) and either 5 traits or 4 traits
 sp_mean_all5 <- traits %>% filter(trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
                 select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
-sp_mean_ctrl5 <- traits %>% filter(warming == "C" & trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
-                 select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
 
-mat <- sp_mean_all5 %>% pivot_wider(names_from = trait, values_from = mean_value) %>% column_to_rownames("species")
+#sp_mean_all4 <- traits %>% filter(trait %in% c("leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
+#                select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
+
+#sp_mean_ctrl5 <- traits %>% filter(warming == "C" & trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>% select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
+
+#sp_mean_ctrl4 <- traits %>% filter(warming == "C" & trait %in% c("leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
+#                 select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
+
+mat <- sp_mean_ctrl4 %>% pivot_wider(names_from = trait, values_from = mean_value) %>% column_to_rownames("species")
 
 mat <- scale(mat) # Standardize (center = 0, scale = 1)
 pairs.panels(mat, lm = TRUE, smooth = FALSE, ellipse = FALSE, method = "pearson", hist.col = 4, stars = TRUE)
@@ -249,6 +256,11 @@ rm(traits_cor, cor_plots)
 #  Testing for differences in variance between traits using f-tests
 ```{r}
 trait_comp <- traits_f %>% mutate(trait = "overall") %>% rbind(traits_f)
+site_comp <- traits_f %>% mutate(siteID = "overall") %>% rbind(traits_f)
+species_comp <- traits_f %>% mutate(species = "overall") %>% rbind(traits_f)
+Ulv <- site_comp %>% filter(siteID %in% c("overall", "Ulvehaugen"))
+Gud <- site_comp %>% filter(siteID %in% c("overall", "Gudmedalen"))
+Skj <- site_comp %>% filter(siteID %in% c("overall", "Skjelingahaugen"))
 
 results <- data.frame(
   trait = character(),
@@ -266,6 +278,33 @@ for(t in unique(trait_comp$trait[trait_comp$trait != "overall"])) {
   
   results <- rbind(results, data.frame(
     trait = t,
+    df_trait = test$parameter[1],
+    df_overall = test$parameter[2],
+    f_statistic = test$statistic,
+    p_value = test$p.value))}
+
+
+# Loop through all traits and compare between site and overall
+for(t in unique(Skj$trait)) {
+  ses_site <- Skj$SES[Skj$trait == t & Skj$siteID == "Skjelingahaugen"]
+  ses_overall <- Skj$SES[Skj$trait == t & Skj$siteID == "overall"]
+  test <- var.test(ses_site, ses_overall) # F-test for comparing variances
+  
+  results <- rbind(results, data.frame(
+    trait = t,
+    df_trait = test$parameter[1],
+    df_overall = test$parameter[2],
+    f_statistic = test$statistic,
+    p_value = test$p.value))}
+
+# Loop through species and compare species Cohen's d variance to overall variance
+for(s in unique(species_comp$species[species_comp$species != "overall"])) {
+  ses_single <- species_comp$SES[species_comp$species == s]
+  ses_overall <- species_comp$SES[species_comp$species == "overall"]
+  test <- var.test(ses_single, ses_overall) # F-test for comparing variances
+  
+  results <- rbind(results, data.frame(
+    species = s,
     df_trait = test$parameter[1],
     df_overall = test$parameter[2],
     f_statistic = test$statistic,
