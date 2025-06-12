@@ -57,36 +57,34 @@ sp_mean_ctrl5 <- traits %>% filter(warming == "C" & trait %in% c("plant_height_c
 #sp_mean_ctrl4 <- traits %>% filter(warming == "C" & trait %in% c("leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
 #                 select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
 
-mat <- sp_mean_ctrl5 %>% pivot_wider(names_from = trait, values_from = mean_value) %>% column_to_rownames("species")
+mat <- sp_mean_ctrl5 %>% pivot_wider(names_from = trait, values_from = mean_value)
+mat[,2:6] <- scale(mat[,2:6])
 
-mat <- scale(mat) # Standardize (center = 0, scale = 1)
-pairs.panels(mat, lm = TRUE, smooth = FALSE, ellipse = FALSE, method = "pearson", hist.col = 4, stars = TRUE)
-main_pcs <- prcomp(mat, center = F, scale. = F)
-autoplot(main_pcs, loadings = TRUE, loadings.colour = 'blue', loadings.label = TRUE)
-
-dist_euc <- dist(mat, method = "euclidean") # Compute distance matrix
+dist_euc <- mat %>% column_to_rownames(var = "species")
+dist_euc <- dist(dist_euc, method = "euclidean") # Compute distance matrix
 hclusters <- hclust(dist_euc, method = "ward.D2") # Hierarchical clustering
 
-fviz_dend(hclusters, cex = 0.8, k = 5, rect = TRUE) # print 600 x 900; 3 and 5 clusters makes sense
-groups_3 <- as.data.frame(cutree(hclusters, k = 3))
+fviz_dend(hclusters, cex = 0.8, k = 5, rect = TRUE, scale = "none", labels_track_height = 4.5, type = "rectangle") # print 600 x 450
+groups_3 <- as.data.frame(cutree(hclusters, k = 3)) # 3 and 5 clusters makes sense
 groups_5 <- as.data.frame(cutree(hclusters, k = 5))
 
 sp_clust <- groups_3 %>% rownames_to_column(var = "species") %>% cbind(groups_5) %>% remove_rownames()
+#sp_clust <- rename(sp_clust, clust3 = `cutree(hclusters, k = 3)`, clust5 = `cutree(hclusters, k = 5)`)
+sp_clust$clust3 <- case_when(sp_clust$clust3 == 1 ~ "C", sp_clust$clust3 == 2 ~ "B", sp_clust$clust3 == 3 ~ "A")
+sp_clust$clust5 <- case_when(sp_clust$clust5 == 1 ~ "C2", sp_clust$clust5 == 2 ~ "B1", sp_clust$clust5 == 3 ~ "B2",
+                             sp_clust$clust5 == 4 ~ "C1", sp_clust$clust5 == 5 ~ "A")
+
+#pairs.panels(mat[,2:6], lm = TRUE, smooth = FALSE, ellipse = FALSE, method = "pearson", hist.col = 4, stars = TRUE)
+mat <- left_join(mat, sp_clust, by = "species")
+colnames(mat) <- c("species", "LDMC", "LA", "LTH", "H", "SLA", "clust3", "clust5")
+main_pcs <- prcomp(mat[,2:6], center = F, scale. = F)
+
+#autoplot(main_pcs, loadings = TRUE, loadings.colour = 'blue', loadings.label = TRUE)
+fviz_pca_biplot(main_pcs, habillage = mat$clust3, addEllipses = TRUE, geom = "point", repel = T,
+                col.var="black", title = "Species clusters") + theme_classic()
 
 rm(dist_euc, mat, hclusters, sp_mean_ctrl5, groups_3, groups_5)
 
-#_______________________________________________________________________________
-# Alternative: k-means for K clusters
-#set.seed(42)
-#km.res <- kmeans(mat, centers = 3, nstart = 25)
-#print(km.res$cluster) # at 3 groups, both methods show individual group for Saussurea alpina
-
-# Evaluating optimal K
-#fviz_nbclust(mat, kmeans, method = "wss") + labs(subtitle = "Elbow method") # Elbow (total within‑sum of squares)
-#fviz_nbclust(mat, kmeans, method = "silhouette") + labs(subtitle = "Silhouette method") # Average silhouette
-
-#nc <- NbClust(mat, distance = "euclidean", min.nc = 2, max.nc = 4, method = "ward.D2") # NbClust comprehensive
-#fviz_nbclust(nc)
 ```
 
 
@@ -189,15 +187,14 @@ cor_plots <- ggplot(traits_MAT, aes(x = MAT_C, y = SES)) + geom_point(aes(color 
 ```{r}
 #n_obs <- traits4 %>% filter(!is.na(SES)) %>% group_by(siteID, trait) %>% mutate(n_obs = n()) %>% sample_n(1) %>% select(siteID, trait, n_obs)
 
-species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES = mean(SES)) %>%
+species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES = var(SES)) %>% # change mean to var
   select(species, trait, mean_SES) %>% sample_n(1) %>%
   pivot_wider(names_from = trait, values_from = mean_SES)
 species_SES_table$mean_overall <- rowMeans(abs(species_SES_table[,2:11]), na.rm = TRUE)
 
-trait_SES_table <- traits_f %>% group_by(trait) %>% mutate(meanSES = mean(SES), absSES = mean(abs(SES)), nsamples = n()) %>%
-                   sample_n(1) %>% ungroup() %>% select(c(trait, meanSES, absSES, nsamples))
-
-var_table <-  traits_f %>% group_by(species) %>% summarize(SES_var = var(SES), SES_sd = sd(SES))
+trait_SES_table <- traits_f %>% group_by(trait) %>% summarize(meanSES = mean(SES), absSES = mean(abs(SES)),
+                                                           varSES = var(SES), nsamples = n())
+cor.test(trait_SES_table$absSES, trait_SES_table$varSES, method = "pearson")
 
 #_______________________________________________________________________________
 sp_tables <- traits_f  %>% select(siteID, species, trait, SES) #%>% filter(trait != "C:N")
@@ -331,7 +328,7 @@ for(s in unique(species_comp$species[species_comp$species != "overall"])) {
     f_statistic = test$statistic,
     p_value = test$p.value))}
 
-rm(ses_overall, ses_trait, t, trait_comp)
+rm(trait_comp, site_comp, species_comp, Ulv, Gud, Skj, results, test, ses_overall, ses_traits, results, ses_site, s, t, ses_single, )
 ```
 
 
