@@ -209,11 +209,15 @@ sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "med
 
 #sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum alpinum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta"))) # GENERALIST V ALPINE
 
-#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum alpinum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina"))) # GRAMINOIDS V FORBS
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum alpinum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina"))) # GRAMINOIDS V FORBS
 
-sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Agrostis capillaris", "Anthoxanthum alpinum", "Astragalus alpinus", "Campanula rotundifolia", "Leontodon autumnalis", "Veronica alpina", "Viola biflora", "Alchemilla alpina", "Poa alpina", "Salix herbacea", "Sibbaldia procumbens", "Thalictrum alpinum", "Bistorta vivipara", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Saussurea alpina"))) # GROUPS BASED ON CLUSTER ANALYSIS (3/5)
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Agrostis capillaris", "Anthoxanthum alpinum", "Astragalus alpinus", "Campanula rotundifolia", "Leontodon autumnalis", "Veronica alpina", "Viola biflora", "Alchemilla alpina", "Poa alpina", "Salix herbacea", "Sibbaldia procumbens", "Thalictrum alpinum", "Bistorta vivipara", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Saussurea alpina"))) # GROUPS BASED ON CLUSTER ANALYSIS (3/5)
 
-points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
+sp_tables <- sp_tables %>% ungroup() %>% complete(species, trait, precip, fill = list(SES = NA))
+
+points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
+  geom_point(data = filter(sp_tables, !is.na(SES)), aes(size  = abs(SES), color = SES > 0)) +
+  geom_point(data  = filter(sp_tables, is.na(SES)), aes(size = 1), shape = 45, color = "black") +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
   scale_size_continuous(range = c(0.5,6), breaks = c(0.1, 1, 2, 3)) + # c(1, 10)
   scale_y_discrete(limits = rev(levels(sp_tables$species))) + theme_classic() +
@@ -226,6 +230,7 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), c
   theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"),
         axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
         axis.text.y = element_text(face = "italic"))
+
 # print 800 x 1000
 # Helpful Unicode tables for arrows: https://en.wikipedia.org/wiki/Arrow_(symbol)
 
