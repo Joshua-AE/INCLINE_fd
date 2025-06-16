@@ -479,10 +479,13 @@ t_tests2 <- SES_combined %>% select(-c(siteID, species)) %>% group_by(precip, tr
          p_value = map_dbl(wilcox_test, ~ .x$p.value)     # Extract p-value
   ) %>% select(-wilcox_test)
 
-SES_mean <- SES_combined %>% group_by(precip, trait) %>% summarize(mean_SES = mean(SES), .groups = "drop")
+SES_mean <- SES_combined %>% group_by(precip, trait) %>% summarize(mean_SES = mean(SES), var_SES = var(SES), .groups = "drop")
 SES_summary <- left_join(SES_mean, t_tests[,c(1:2,5)], by = c("precip", "trait"))
 SES_summary <- SES_summary %>% mutate(significance = case_when(p_value < 0.05 ~ "🞲", p_value < 0.1  ~ "+", TRUE ~ ""),
                                 label_text = paste0(round(mean_SES, 2), " ", significance))
+
+sites_comp <- SES_summary %>% filter(mean_SES > -0.8) %>% group_by(precip) %>%
+              summarise(mean_abs_SES = mean(abs(mean_SES)), mean_var = mean(var_SES)) # overall sites comparison
 
 violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   geom_half_violin(side = "l", trim = TRUE, color = NA) +
