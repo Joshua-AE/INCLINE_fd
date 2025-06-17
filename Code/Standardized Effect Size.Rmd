@@ -47,7 +47,7 @@ library("ggfortify") # autoplot
 
 # tables of mean trait values per species, either all (all samples) or ctrl (only control samples) and either 5 traits or 4 traits
 #sp_mean_all5 <- traits %>% filter(trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
-                select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
+#                select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
 
 #sp_mean_all4 <- traits %>% filter(trait %in% c("leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
 #                select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
@@ -64,12 +64,13 @@ dist_euc <- mat %>% column_to_rownames(var = "species")
 dist_euc <- dist(dist_euc, method = "euclidean") # Compute distance matrix
 hclusters <- hclust(dist_euc, method = "ward.D2") # Hierarchical clustering
 
-fviz_dend(hclusters, cex = 0.8, k = 5, rect = TRUE, scale = "none", labels_track_height = 4.5, type = "rectangle") # print 600 x 450
+fviz_dend(hclusters, cex = 0.8, k = 3, rect = TRUE, scale = "none", labels_track_height = 4.5, type = "rectangle", k_colors = c("#d95f02", "#1b9e77", "#7570b3"))
+# print 600 x 450, change k = 5 
 groups_3 <- as.data.frame(cutree(hclusters, k = 3)) # 3 and 5 clusters makes sense
 groups_5 <- as.data.frame(cutree(hclusters, k = 5))
 
 sp_clust <- groups_3 %>% rownames_to_column(var = "species") %>% cbind(groups_5) %>% remove_rownames()
-#sp_clust <- rename(sp_clust, clust3 = `cutree(hclusters, k = 3)`, clust5 = `cutree(hclusters, k = 5)`)
+sp_clust <- rename(sp_clust, clust3 = `cutree(hclusters, k = 3)`, clust5 = `cutree(hclusters, k = 5)`)
 sp_clust$clust3 <- case_when(sp_clust$clust3 == 1 ~ "C", sp_clust$clust3 == 2 ~ "B", sp_clust$clust3 == 3 ~ "A")
 sp_clust$clust5 <- case_when(sp_clust$clust5 == 1 ~ "C2", sp_clust$clust5 == 2 ~ "B1", sp_clust$clust5 == 3 ~ "B2",
                              sp_clust$clust5 == 4 ~ "C1", sp_clust$clust5 == 5 ~ "A")
@@ -81,9 +82,11 @@ main_pcs <- prcomp(mat[,2:6], center = F, scale. = F)
 
 #autoplot(main_pcs, loadings = TRUE, loadings.colour = 'blue', loadings.label = TRUE)
 fviz_pca_biplot(main_pcs, habillage = mat$clust3, addEllipses = TRUE, geom = "point", repel = T,
-                col.var="black", title = "Species clusters") + theme_classic()
+                col.var="black", title = "Species clusters") +
+                theme_classic() + scale_color_manual(values=c("#d95f02", "#1b9e77", "#7570b3")) +
+                scale_fill_manual(values=c("#d95f02", "#1b9e77", "#7570b3"))
 
-rm(dist_euc, mat, hclusters, sp_mean_ctrl5, groups_3, groups_5)
+rm(dist_euc, mat, hclusters, sp_mean_ctrl5, groups_3, groups_5, main_pcs)
 
 ```
 
@@ -211,7 +214,7 @@ sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "med
 
 sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum alpinum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina"))) # GRAMINOIDS V FORBS
 
-#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Agrostis capillaris", "Anthoxanthum alpinum", "Astragalus alpinus", "Campanula rotundifolia", "Leontodon autumnalis", "Veronica alpina", "Viola biflora", "Alchemilla alpina", "Poa alpina", "Salix herbacea", "Sibbaldia procumbens", "Thalictrum alpinum", "Bistorta vivipara", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Saussurea alpina"))) # GROUPS BASED ON CLUSTER ANALYSIS (3/5)
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Saussurea alpina", "Alchemilla alpina", "Bistorta vivipara", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina", "Salix herbacea", "Sibbaldia procumbens", "Thalictrum alpinum", "Agrostis capillaris", "Anthoxanthum alpinum", "Astragalus alpinus", "Campanula rotundifolia", "Leontodon autumnalis", "Veronica alpina", "Viola biflora"))) # GROUPS BASED ON CLUSTER ANALYSIS (3/5)
 
 sp_tables <- sp_tables %>% ungroup() %>% complete(species, trait, precip, fill = list(SES = NA))
 
@@ -234,15 +237,16 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
 # print 800 x 1000
 # Helpful Unicode tables for arrows: https://en.wikipedia.org/wiki/Arrow_(symbol)
 
-points_plot <- ggplot(sp_tables, aes(x = precip, y = species, size = abs(SES), color = SES > 0)) + geom_point() +
+points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
+  geom_point(data = filter(sp_tables, !is.na(SES)), aes(size  = abs(SES), color = SES > 0)) +
+  geom_point(data  = filter(sp_tables, is.na(SES)), aes(size = 1), shape = 45, color = "black") +
   scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
   scale_size_continuous(range = c(0.5,6), breaks = c(0.1, 1, 2, 3)) + # c(1, 10)
   scale_y_discrete(limits = rev(levels(sp_tables$species))) + theme_classic() +
   labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) +
-  geom_hline(yintercept = c(1.5, 10.5), lty = 1, linewidth = 0.25) +
-  geom_hline(yintercept = c(5.5, 14.5), lty = 2, linewidth = 0.25) +  
+  geom_hline(yintercept = c(7.5, 16.5), lty = 1, linewidth = 0.25) +
   facet_wrap(~ trait, ncol = 4) + # scales = "free"
-  annotate("text", x = 4.3, y = c(16, 12, 7, 3, 1), label = c("A1", "A2", "B1", "B2", "C"), angle = 90, size = 4) +
+  annotate("text", x = 4.35, y = c(17, 12, 4), label = c("A", "B", "C"), angle = 0, size = 4) +
   annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.2) +
   theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"),
         axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
@@ -341,19 +345,22 @@ rm(trait_comp, site_comp, species_comp, Ulv, Gud, Skj, results, test, ses_overal
 ```{r}
 classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
 classification$Type <- case_when(str_detect(classification$species, "Agrostis|Anthoxanthum|Carex|Festuca|Poa|Avenella|Deschampsia|Nardus") ~ "Graminoids", TRUE ~ "Forbs")
+classification <- left_join(classification, sp_clust, by = "species")
 
 # comparison alpine vs generalist species and graminoids vs. Forbs
 SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species")
 #SES_compare$SES <- abs(SES_compare$SES) # Optional. Depending if you want to compare actual or absolute SES values
 
-#Checking t-test assumptions (normality and equal variances)
+SES_compare <- filter(SES_compare, species != "Saussurea alpina") # OPTIONAL: In case of t-tests between clusters and not growth forms
+
+#Checking t-test assumptions (normality and equal variances) change grouping to clust3 / Type / alpine
 norm_test <- SES_compare %>% group_by(trait, as.factor(Type)) %>% summarise(p_value = shapiro.test(SES)$p.value) # no violations of normal distribution at p < 0.5
 norm_plots <- ggplot(SES_compare, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + Type) # qq-plot visual inspection
 var_test <- SES_compare %>% group_by(trait) %>% summarise(p_value = var.test(SES ~ as.factor(Type))$p.value)
 # unequal variances in graminoids and herbs for LA, Lth, D15N and LDMC. For these traits, report Welch’s t-test (var.equal = FALSE)
 
 #Running t-tests
-t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(Type), data = ., var.equal = FALSE)) %>% ungroup() # change var.equal
+t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(Type), data = ., var.equal = T)) %>% ungroup() # change var.equal
 
 mean_test_results <- t_test_results %>% mutate(
                      t_statistic = sapply(t_test, function(x) x$statistic), # t-statistic
