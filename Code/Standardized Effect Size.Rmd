@@ -152,6 +152,37 @@ traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait
 rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
 ```
 
+
+# Clusters of species based on their functional response/SES values
+```{r}
+sp_mean <- traits_f %>% group_by(species, trait) %>% summarise(mean_SES = mean(SES)) # calculate SES mean across three sites
+sp_mean <- filter(sp_mean, trait %in% c("H", "LA", "LTH", "LDMC", "SLA")) # optional: select 5 leaf and growth traits
+sp_mean <- sp_mean %>% pivot_wider(names_from = trait, values_from = mean_SES)
+sp_mean[,2:6] <- scale(sp_mean[,2:6])
+
+dist_euc <- sp_mean %>% column_to_rownames(var = "species")
+dist_euc <- dist(dist_euc, method = "euclidean") # Compute distance matrix
+hclusters <- hclust(dist_euc, method = "ward.D2") # Hierarchical clustering
+
+fviz_dend(hclusters, cex = 0.8, k = 3, rect = TRUE, scale = "none", labels_track_height = 4.5, type = "rectangle", k_colors = c("#1b9e77", "#7570b3", "#d95f02"))
+# print 600 x 450, change k = 5
+
+groups_3 <- as.data.frame(cutree(hclusters, k = 3)) # 3 clusters makes sense
+sp_clust <- groups_3 %>% rownames_to_column(var = "species") %>% remove_rownames()
+sp_clust <- rename(sp_clust, clust3 = `cutree(hclusters, k = 3)`)
+
+sp_mean <- left_join(sp_mean, sp_clust, by = "species")
+main_pcs <- prcomp(sp_mean[,2:6], center = F, scale. = F)
+
+fviz_pca_biplot(main_pcs, habillage = sp_mean$clust3, addEllipses = TRUE, geom = "point", repel = T,
+                col.var="black", title = "Species clusters") +
+                theme_classic() + scale_color_manual(values=c("#d95f02", "#1b9e77", "#7570b3")) +
+                scale_fill_manual(values=c("#d95f02", "#1b9e77", "#7570b3"))
+
+rm(groups3)
+```
+
+
 # Sorting species by Ellenberg-type indicator values (Moisture) or MAT from Lynn et al.
 ```{r}
 # Sources: https://onlinelibrary.wiley.com/doi/full/10.1111/jvs.13168
@@ -216,6 +247,8 @@ sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemil
 
 #sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Saussurea alpina", "Alchemilla alpina", "Bistorta vivipara", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina", "Salix herbacea", "Sibbaldia procumbens", "Thalictrum alpinum", "Agrostis capillaris", "Anthoxanthum alpinum", "Astragalus alpinus", "Campanula rotundifolia", "Leontodon autumnalis", "Veronica alpina", "Viola biflora"))) # GROUPS BASED ON CLUSTER ANALYSIS (3/5)
 
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Agrostis capillaris", "Anthoxanthum alpinum", "Bistorta vivipara", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta", "Poa alpina", "Salix herbacea", "Viola biflora", "Alchemilla alpina", "Astragalus alpinus", "Campanula rotundifolia", "Carex bigelowii", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina"))) # GROUPS BASED ON CLUSTER ANALYSIS FOR SES VALUES!!
+
 sp_tables <- sp_tables %>% ungroup() %>% complete(species, trait, precip, fill = list(SES = NA))
 
 points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
@@ -244,9 +277,9 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
   scale_size_continuous(range = c(0.5,6), breaks = c(0.1, 1, 2, 3)) + # c(1, 10)
   scale_y_discrete(limits = rev(levels(sp_tables$species))) + theme_classic() +
   labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) +
-  geom_hline(yintercept = c(7.5, 16.5), lty = 1, linewidth = 0.25) +
+  geom_hline(yintercept = c(3.5, 8.5), lty = 1, linewidth = 0.25) + # 7.5, 16.5
   facet_wrap(~ trait, ncol = 4) + # scales = "free"
-  annotate("text", x = 4.35, y = c(17, 12, 4), label = c("A", "B", "C"), angle = 0, size = 4) +
+  annotate("text", x = 4.35, y = c(12.5, 6, 2), label = c("A", "B", "C"), angle = 0, size = 4) + # 17, 12, 4
   annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.2) +
   theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"),
         axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
