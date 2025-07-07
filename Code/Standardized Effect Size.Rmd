@@ -445,25 +445,27 @@ classification$Type <- case_when(str_detect(classification$species, "Agrostis|An
 
 # species with most medium to high effect sizes, alpine vs. generalists
 SES_lim <- traits_f %>% select(siteID, species, trait, SES) %>% group_by(species)
-SES_lim <- SES_lim %>% summarize(total = n(), limit_1 = sum(abs(SES) >= 1), limit_08 = sum(abs(SES) >= 0.8), limit_05 = sum(abs(SES) >= 0.5))
+SES_lim <- SES_lim %>% summarize(total = n(), limit_1 = sum(abs(SES) >= 1), limit_08 = sum(abs(SES) >= 0.8),
+                                 limit_05 = sum(abs(SES) >= 0.5), limit_02 = sum(abs(SES) >= 0.2))
 SES_lim <- SES_lim %>% left_join(classification[,1:4], by = "species") %>% mutate(alpine = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist")))
 
-fun_type <- SES_lim %>% group_by(Type) %>% summarize(across(2:5, sum))
-fun_type <- fun_type %>% mutate(limit_08 = limit_08 - limit_1, limit_05 = limit_05 - (limit_08 + limit_1),
-                              total = total - (limit_05 + limit_08 + limit_1)) %>%
-           pivot_longer(cols = 2:5, names_to = "Category", values_to = "Value") %>% ungroup() # changing counts so that each column contains only the surplus
-fun_type$Category <- factor(fun_type$Category, levels = c("total", "limit_05", "limit_08", "limit_1"))
+fun_type <- SES_lim %>% group_by(Type) %>% summarize(across(2:6, sum))
+fun_type <- fun_type %>% mutate(total = total - limit_02, limit_02 = limit_02 - limit_05, limit_05 = limit_05 - limit_08, limit_08 = limit_08 - limit_1) %>%
+           pivot_longer(cols = 2:6, names_to = "Category", values_to = "Value") %>% ungroup() # changing counts so that each column contains only the surplus
+fun_type$Category <- factor(fun_type$Category, levels = c("total", "limit_02", "limit_05", "limit_08", "limit_1"))
 fun_type$perc <- case_when(fun_type$Type == "Forbs" ~ fun_type$Value/261 *100,
                            fun_type$Type == "Graminoids" ~ fun_type$Value/153 *100)
+fun_type <- fun_type %>% mutate(color_group = if_else(Category %in% c("limit_08", "limit_1"), "group_w", "group_b")) 
 
 bar_plot <- ggplot(fun_type, aes(x = Type, y = Value, fill = Category)) +
   geom_bar(stat = "identity", width = 0.7, color = "black") + # or position = "dodge" # or without position and alpha, as stacked graph
-  scale_fill_manual(values = c("white", "#cccccc", "#969696", "#636363"), labels = c("SES < 0.5", "SES \u2265 0.5", "SES \u2265 0.8", "SES \u2265 1")) +
+  scale_fill_manual(values = c("white", "#cccccc", "#969696", "#636363", "#252525"),
+                    labels = c("< 0.2", "0.2 - 0.5", "0.5 - 0.8", "0.8 - 1", "\u2265 1"), name = "SES category") +
   facet_wrap(~ Type, scales = "free", ncol = 2) +
   labs(title = NULL, x = "", y = "Number of effect sizes") +
   theme_classic() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), text = element_text(size = 14)) +
-  geom_text(aes(label = paste0(sprintf("%1.1f", perc), "%")), position = position_stack(vjust = 0.5))
-# print 500 x 420
+  geom_text(aes(label = paste0(sprintf("%1.1f", perc), "%"), group = as.factor(Category), color = color_group), position = position_stack(vjust = 0.5)) + scale_color_manual(values = c("black", "white")) + guides(color = "none")
+# print 500 x 450
 
 #SES_lim$fraction <- SES_lim$sum_SES05/SES_lim$total # the fraction is important because there are more alpine than generalist species
 
@@ -544,7 +546,7 @@ violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   ylim(-2.62, 2.62) # otherwise ylim(-5,5)
 
 # print 800 x 1000
-rm(SES_sites, data_all_sites, SES_combined, SES_summary, violin_plot, t_tests)
+rm(SES_sites, data_all_sites, SES_combined, SES_summary, violin_plot, t_tests, norm_plots, norm_test, SES_mean, sites_comp, t_tests2,)
 #_______________________________________________________________________________ violin plots for all traits and across sites
 #multi_bp <- ggplot(SES_sites, aes(x = trait, y = SES, group = trait)) + geom_violin(aes(fill = trait), trim = T) +
 #  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) + stat_summary(fun.data = "mean_cl_boot", geom = "pointrange",
