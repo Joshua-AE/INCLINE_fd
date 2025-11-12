@@ -251,6 +251,11 @@ sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Agrostis
 
 sp_tables <- sp_tables %>% ungroup() %>% complete(species, trait, precip, fill = list(SES = NA))
 
+library(tibble)
+
+annot_df <- tibble(trait = rep(c("LDMC", "C:N", "δ15N"), each = 2), x = 4.35, y = rep(c(8.7, 3.7), times = 3), label = rep(c("Forbs 🡺", "Graminoids"), times = 3))
+if (is.factor(sp_tables$trait)) annot_df$trait <- factor(annot_df$trait, levels = levels(sp_tables$trait))
+
 points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
   geom_point(data = filter(sp_tables, !is.na(SES)), aes(size  = abs(SES), color = SES > 0)) +
   geom_point(data  = filter(sp_tables, is.na(SES)), aes(size = 1), shape = 45, color = "black") +
@@ -260,12 +265,17 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
   labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) +
   geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
   facet_wrap(~ trait, ncol = 4) + # scales = "free"
-  annotate("text", x = 4.3, y = 8.7, label = "Forbs 🡺", angle = 90, size = 4) + # y = 8.7, label = "Forbs 🡺"
-  annotate("text", x = 4.3, y = 3.7, label = "Graminoids", angle = 90, size = 4) + # "🡸 Generalist" | y = 3.7, label = "Graminoids"
+  geom_text(data = annot_df, aes(x = x, y = y, label = label), angle = 90, size = 4, inherit.aes = FALSE) +
   annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.2) +
   theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"),
         axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
-        axis.text.y = element_text(face = "italic"))
+        axis.text.y = element_text(face = "italic"), axis.line = element_blank(),
+        strip.background = element_rect(fill = NA, linewidth = 1))
+
+#  geom_text(data = annot_df, aes(x = x, y = y, label = label), angle = 90, size = 4, inherit.aes = FALSE) +
+
+#  annotate("text", x = 4.3, y = 8.7, label = "Forbs 🡺", angle = 90, size = 4) + # y = 8.7, label = "Forbs 🡺"
+#  annotate("text", x = 4.3, y = 3.7, label = "Graminoids", angle = 90, size = 4) + # "🡸 Generalist" | y = 3.7, label = "Graminoids"
 
 # print 800 x 1000
 # Helpful Unicode tables for arrows: https://en.wikipedia.org/wiki/Arrow_(symbol)
@@ -285,7 +295,11 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
         axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
         axis.text.y = element_text(face = "italic"))
 
-rm(sp_tables, data_all_sites, points_plot)
+outdir <- "../Text and pictures/for publication"
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+ggsave(filename = file.path(outdir, "points_plot_ForbGram7.png"), plot = points_plot, width = 20.8, height = 26, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
+
+rm(sp_tables, data_all_sites, points_plot, outdir, annot_df)
 ```
 
 # Does Cmean influence d?
@@ -467,6 +481,10 @@ bar_plot <- ggplot(fun_type, aes(x = Type, y = Value, fill = Category)) +
   geom_text(aes(label = paste0(sprintf("%1.1f", perc), "%"), group = as.factor(Category), color = color_group), position = position_stack(vjust = 0.5)) + scale_color_manual(values = c("black", "white")) + guides(color = "none")
 # print 500 x 450
 
+outdir <- "../Text and pictures/for publication"
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+ggsave(filename = file.path(outdir, "bar_plot.png"), plot = bar_plot, width = 12, height = 10.8, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
+
 #SES_lim$fraction <- SES_lim$sum_SES05/SES_lim$total # the fraction is important because there are more alpine than generalist species
 
 #histograms
@@ -542,10 +560,15 @@ violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
   scale_fill_manual(values = c("#c6dbef", "#6baed6", "#2171b5", "grey")) +
   theme_classic() +
   labs(title = NULL, x = "Precipitation", y = "Standardized effect size [Cohen's d]") +
-  theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12)) +
+  theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12), axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8), strip.background = element_rect(fill = NA, linewidth = 0.8)) +
   ylim(-2.62, 2.62) # otherwise ylim(-5,5)
 
 # print 800 x 1000
+outdir <- "../Text and pictures/for publication"
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+ggsave(filename = file.path(outdir, "violin_plots_SES2.png"), plot = violin_plot, width = 19.2, height = 24, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
+
 rm(SES_sites, data_all_sites, SES_combined, SES_summary, violin_plot, t_tests, norm_plots, norm_test, SES_mean, sites_comp, t_tests2,)
 #_______________________________________________________________________________ violin plots for all traits and across sites
 #multi_bp <- ggplot(SES_sites, aes(x = trait, y = SES, group = trait)) + geom_violin(aes(fill = trait), trim = T) +
