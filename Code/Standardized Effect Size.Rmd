@@ -258,8 +258,8 @@ sp_tables <- sp_tables %>% ungroup() %>% complete(species, trait, precip, fill =
 
 library(tibble)
 
-annot_df <- tibble(trait = rep(c("LDMC", "C:N", "δ15N"), each = 2), x = 4.35, y = rep(c(8.7, 3.7), times = 3), label = rep(c("Forbs 🡺", "Graminoids"), times = 3))
-if (is.factor(sp_tables$trait)) annot_df$trait <- factor(annot_df$trait, levels = levels(sp_tables$trait))
+annot_df <- tibble(trait = rep(c("H", "SLA", "δ13C"), each = 2), x = 4.35, y = rep(c(8.7, 3.7), times = 3), label = rep(c("Forbs 🡺", "Graminoids"), times = 3))
+if (is.factor(sp_tables$trait)) annot_df$trait <- factor(annot_df$trait, levels = levels(sp_tables$trait)) # "LDMC", "C:N", "δ15N"
 
 points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
   geom_point(data = filter(sp_tables, !is.na(SES)), aes(size  = abs(SES), color = SES > 0)) +
@@ -302,7 +302,7 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
 
 outdir <- "../Text and pictures/for publication"
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
-ggsave(filename = file.path(outdir, "points_plot_ForbGram7.png"), plot = points_plot, width = 20.8, height = 26, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
+ggsave(filename = file.path(outdir, "points_plot_ForbGram8.png"), plot = points_plot, width = 20.8, height = 26, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
 
 rm(sp_tables, data_all_sites, points_plot, outdir, annot_df)
 ```
