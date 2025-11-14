@@ -88,8 +88,8 @@ cluster_plot <- fviz_pca_biplot(main_pcs, habillage = mat$clust3, addEllipses = 
 
 outdir <- "../Text and pictures/for publication"
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
-ggsave(filename = file.path(outdir, "Biplot species clusters.png"), plot = cluster_plot, width = 12, height = 9.6, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
-ggsave(filename = file.path(outdir, "3 clusters ctrl 5 traits.png"), plot = dendr_plot, width = 16, height = 12, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
+ggsave(filename = file.path(outdir, "Biplot species clusters2.png"), plot = cluster_plot, width = 12, height = 9.6, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
+ggsave(filename = file.path(outdir, "3 clusters ctrl 5 traits2.png"), plot = dendr_plot, width = 16, height = 12, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
 
 rm(dist_euc, mat, hclusters, sp_mean_ctrl5, groups_3, groups_5, main_pcs)
 
@@ -302,7 +302,7 @@ points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
 
 outdir <- "../Text and pictures/for publication"
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
-ggsave(filename = file.path(outdir, "points_plot_ForbGram8.png"), plot = points_plot, width = 20.8, height = 26, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
+ggsave(filename = file.path(outdir, "points_plot_ForbGram9.png"), plot = points_plot, width = 20.8, height = 26, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
 
 rm(sp_tables, data_all_sites, points_plot, outdir, annot_df)
 ```
@@ -488,7 +488,7 @@ bar_plot <- ggplot(fun_type, aes(x = Type, y = Value, fill = Category)) +
 
 outdir <- "../Text and pictures/for publication"
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
-ggsave(filename = file.path(outdir, "bar_plot.png"), plot = bar_plot, width = 12, height = 10.8, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
+ggsave(filename = file.path(outdir, "bar_plot2.png"), plot = bar_plot, width = 12, height = 10.8, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
 
 #SES_lim$fraction <- SES_lim$sum_SES05/SES_lim$total # the fraction is important because there are more alpine than generalist species
 
@@ -572,7 +572,7 @@ violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
 # print 800 x 1000
 outdir <- "../Text and pictures/for publication"
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
-ggsave(filename = file.path(outdir, "violin_plots_SES2.png"), plot = violin_plot, width = 19.2, height = 24, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
+ggsave(filename = file.path(outdir, "violin_plots_SES3.png"), plot = violin_plot, width = 19.2, height = 24, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
 
 rm(SES_sites, data_all_sites, SES_combined, SES_summary, violin_plot, t_tests, norm_plots, norm_test, SES_mean, sites_comp, t_tests2,)
 #_______________________________________________________________________________ violin plots for all traits and across sites
@@ -631,7 +631,7 @@ violin_plot <- ggplot(data_combined, aes(x = precip, y = trait_mean, fill = prec
 # print 800 x 1000
 outdir <- "../Text and pictures/for publication"
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
-ggsave(filename = file.path(outdir, "violin_plots_trait_means.png"), plot = violin_plot, width = 19.2, height = 24, units = "cm", dpi = 300, device = ragg::agg_png) # or cairo_png
+ggsave(filename = file.path(outdir, "violin_plots_trait_means2.png"), plot = violin_plot, width = 19.2, height = 24, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
 
 # Assumption testing first
 norm_test <- site_comp %>% group_by(trait, precip) %>% summarise(p_value = shapiro.test(trait_mean)$p.value) # Many non-normally distributed
