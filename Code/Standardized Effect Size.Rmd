@@ -1,0 +1,808 @@
+---
+title: "Standardized Effect Size"
+author: "Joshua"
+date: "2023-10-13"
+output: html_document
+---
+
+# Packages
+```{r echo = FALSE, print = FALSE, message = FALSE}
+library("tidyverse")
+library("ie2misc") # madstat mean absolute deviation
+library("ggplot2")
+library("gghalves")
+library("cowplot")
+library("ggpmisc") # adds stat_poly_eq to regression in ggplot
+library("car") # for leveneTest (variance equality)
+```
+
+# Merging data and filtering species
+```{r}
+raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
+chem_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_chemical_traits_2022.txt", guess_max = Inf)
+
+chem_traits <- chem_traits %>% group_by(ID_merged, trait) %>% sample_n(1) 
+chem_traits <- chem_traits %>% ungroup() %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
+  filter(trait %in% c("c_percent", "n_percent", "c_n", "d15n", "d13c")) # no sample removed, but trait phosphorus percentage removed because of missing data
+
+traits <- raw_traits %>% select(c(siteID, blockID, warming, species, trait, value)) %>% na.omit() %>%
+  filter(trait %in% c("ldmc", "leaf_area_cm2", "leaf_thickness_mm", "plant_height_cm", "sla_cm2_g")) # one sample removed: DLL3549
+traits <- rbind(traits, chem_traits)
+
+selected_sp <- traits %>% select(siteID, warming, species) %>% unique() %>% group_by(species) %>% mutate(Freq = n()) %>%
+               filter(Freq >= 4 & species != "Achillea millefolium") # filtering species we have samples for in C and W for each site. n = 13. 2 sites n = 17. Not included is Achillea millefolium because it has warming samples only in Gud
+selected_sp <- unique(selected_sp$species)
+traits <- traits %>% filter(species %in% selected_sp) %>% mutate(species = ifelse(species == "Anthoxanthum odoratum", "Anthoxanthum alpinum", species))
+
+rm(chem_traits, raw_traits, selected_sp)
+```
+
+# Cluster analysis
+```{r}
+# tutorial and blog post by David Zeleny: https://www.davidzeleny.net/anadat-r/doku.php/en:hier-agglom_examples
+library("factoextra") # dist, fviz_dend
+library("NbClust") # NbClust
+library("psych") # pairs.panel
+library("ggfortify") # autoplot
+
+# tables of mean trait values per species, either all (all samples) or ctrl (only control samples) and either 5 traits or 4 traits
+#sp_mean_all5 <- traits %>% filter(trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
+#                select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
+
+#sp_mean_all4 <- traits %>% filter(trait %in% c("leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
+#                select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
+
+sp_mean_ctrl5 <- traits %>% filter(warming == "C" & trait %in% c("plant_height_cm", "leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>% select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
+
+#sp_mean_ctrl4 <- traits %>% filter(warming == "C" & trait %in% c("leaf_area_cm2", "leaf_thickness_mm", "ldmc", "sla_cm2_g")) %>%
+#                 select(c(species, trait, value)) %>% group_by(species, trait) %>% summarise(mean_value = mean(value))
+
+mat <- sp_mean_ctrl5 %>% pivot_wider(names_from = trait, values_from = mean_value)
+mat[,2:6] <- scale(mat[,2:6])
+
+dist_euc <- mat %>% column_to_rownames(var = "species")
+dist_euc <- dist(dist_euc, method = "euclidean") # Compute distance matrix
+hclusters <- hclust(dist_euc, method = "ward.D2") # Hierarchical clustering
+
+dendr_plot <- fviz_dend(hclusters, cex = 0.8, k = 3, rect = TRUE, scale = "none", labels_track_height = 4.5, type = "rectangle", k_colors = c("#d95f02", "#1b9e77", "#7570b3"))
+# print 600 x 450, change k = 5 
+groups_3 <- as.data.frame(cutree(hclusters, k = 3)) # 3 and 5 clusters makes sense
+groups_5 <- as.data.frame(cutree(hclusters, k = 5))
+
+sp_clust <- groups_3 %>% rownames_to_column(var = "species") %>% cbind(groups_5) %>% remove_rownames()
+sp_clust <- rename(sp_clust, clust3 = `cutree(hclusters, k = 3)`, clust5 = `cutree(hclusters, k = 5)`)
+sp_clust$clust3 <- case_when(sp_clust$clust3 == 1 ~ "C", sp_clust$clust3 == 2 ~ "B", sp_clust$clust3 == 3 ~ "A")
+sp_clust$clust5 <- case_when(sp_clust$clust5 == 1 ~ "C2", sp_clust$clust5 == 2 ~ "B1", sp_clust$clust5 == 3 ~ "B2",
+                             sp_clust$clust5 == 4 ~ "C1", sp_clust$clust5 == 5 ~ "A")
+
+#pairs.panels(mat[,2:6], lm = TRUE, smooth = FALSE, ellipse = FALSE, method = "pearson", hist.col = 4, stars = TRUE)
+mat <- left_join(mat, sp_clust, by = "species")
+colnames(mat) <- c("species", "LDMC", "LA", "LTH", "H", "SLA", "clust3", "clust5")
+main_pcs <- prcomp(mat[,2:6], center = F, scale. = F)
+
+#autoplot(main_pcs, loadings = TRUE, loadings.colour = 'blue', loadings.label = TRUE)
+cluster_plot <- fviz_pca_biplot(main_pcs, habillage = mat$clust3, addEllipses = TRUE, geom = "point", repel = T,
+                col.var="black", title = "Species clusters") +
+                theme_classic() + scale_color_manual(values=c("#d95f02", "#1b9e77", "#7570b3")) +
+                scale_fill_manual(values=c("#d95f02", "#1b9e77", "#7570b3"))
+
+outdir <- "../Text and pictures/for publication"
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+ggsave(filename = file.path(outdir, "Biplot species clusters2.png"), plot = cluster_plot, width = 12, height = 9.6, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
+ggsave(filename = file.path(outdir, "3 clusters ctrl 5 traits2.png"), plot = dendr_plot, width = 16, height = 12, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
+
+rm(dist_euc, mat, hclusters, sp_mean_ctrl5, groups_3, groups_5, main_pcs)
+
+```
+
+
+# Computing Cohen's d
+```{r}
+# aggregated by site, block and experiment____________________________________________________________________________
+traits1 <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(mean))
+traits1 <- rename(traits1, mean_value = x)
+traits1l <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(length))
+traits1l <- rename(traits1l, n_obs = x)
+traits1sd <- aggregate(traits$value, by = traits[,1:5], FUN = na.omit(var)) # default: sample not population variance
+traits1sd$x <- sqrt(traits1sd$x)
+traits1sd <- rename(traits1sd, sd = x)
+
+# aggregated by site and experiment__________________________________________________________________________________
+traits2 <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(mean))
+traits2 <- rename(traits2, mean_value = x)
+traits2l <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(length))
+traits2l <- rename(traits2l, n_obs = x)
+traits2sd <- aggregate(traits$value, by = traits[,c(1,3:5)], FUN = na.omit(var)) # default: sample not population variance
+traits2sd$x <- sqrt(traits2sd$x)
+traits2sd <- rename(traits2sd, sd = x)
+
+traits3 <- cbind(traits2, traits2l$n_obs, traits2sd$sd)
+traits3 <- rename(traits3, n_obs = `traits2l$n_obs`, sd = `traits2sd$sd`)
+traits3$ID <- paste(traits3$siteID, traits3$species, traits3$trait, sep = "_")
+traits3C <- filter(traits3, warming == "C") # Control
+traits3OTC <- filter(traits3, warming == "W") # Warming
+
+traits3C <- traits3C %>% rename(C_mean = mean_value, C_n = n_obs, C_sd = sd) %>% select(-c(warming))
+traits3OTC <- traits3OTC %>% rename(OTC_mean = mean_value, OTC_n = n_obs, OTC_sd = sd) %>%
+  select(-c(siteID, species, warming, trait))
+
+traits4 <- full_join(traits3C, traits3OTC, by = "ID")
+traits4 <- select(traits4, -c(ID))
+traits4 <- filter(traits4, !is.na(traits4$siteID) & !is.na(traits4$OTC_mean))
+traits4 <- traits4 %>% mutate(mean_dif = C_mean - OTC_mean, n_dif = C_n - OTC_n, sd_dif = C_sd - OTC_sd)
+
+traits4$pooled_SD <- NA
+for(i in 1:nrow(traits4)) {
+  traits4$pooled_SD[i] <- if(traits4$n_dif[i] == 0)
+  {sqrt((traits4$C_sd[i]^2+traits4$OTC_sd[i]^2)/2)} # pooled sd for equal group sizes
+  else {sqrt(((traits4$C_n[i] - 1) * traits4$C_sd[i]^2 + (traits4$OTC_n[i] - 1) * traits4$OTC_sd[i]^2) / (traits4$C_n[i] + traits4$OTC_n[i] - 2))} # pooled sd for unequal group sizes
+  }
+
+traits4$SES <- (traits4$OTC_mean - traits4$C_mean) / traits4$pooled_SD # Cohen's d: number of SDs between the two means:
+ # mean(group a) - mean(group b) divided by pooled standard deviation.  https://en.wikiversity.org/wiki/Cohen%27s_d
+
+traits4$PR <- (traits4$OTC_mean - traits4$C_mean) / traits4$C_mean # Relative Distance Plasticity Index: shows the factor by which the trait value in the OTC increased or decreased, in comparison to the control plot
+
+traits4$trait <- case_when(traits4$trait == "leaf_area_cm2" ~ "LA", traits4$trait == "leaf_thickness_mm" ~ "LTH", traits4$trait == "sla_cm2_g" ~ "SLA", traits4$trait == "plant_height_cm" ~ "H", traits4$trait == "ldmc" ~ "LDMC", traits4$trait == "c_n" ~ "C:N", traits4$trait == "c_percent" ~ "LCC", traits4$trait == "d13c" ~ "δ13C", traits4$trait == "d15n" ~ "δ15N", traits4$trait == "n_percent" ~ "LNC")
+
+traits4 <- traits4 %>% mutate(trait = factor(trait, levels = c("H", "LA", "LTH", "LDMC", "SLA", "LCC", "LNC", "C:N", "δ13C", "δ15N")))
+
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", 
+                                                                       
+traits_f <- traits4 %>% filter(!is.na(SES)) %>% group_by(trait) %>% mutate(trait_mean = mean(SES), trait_sd = sd(SES)) # trait table filtered
+traits_f$outlier3 <- case_when(traits_f$SES <= traits_f$trait_mean - 3* traits_f$trait_sd ~ "low",
+                               traits_f$SES >= traits_f$trait_mean + 3* traits_f$trait_sd ~ "high") # 6 outliers +- 3 sd away from the mean removed
+traits_f <- traits_f %>% filter(is.na(outlier3)) %>% select(-c(trait_mean, trait_sd, outlier3))
+
+rm(traits1, traits1l, traits1sd, traits2, traits2l, traits2sd, traits3, traits3C, traits3OTC, i)
+```
+
+
+# Clusters of species based on their functional response/SES values
+```{r}
+sp_mean <- traits_f %>% group_by(species, trait) %>% summarise(mean_SES = mean(SES)) # calculate SES mean across three sites
+sp_mean <- filter(sp_mean, trait %in% c("H", "LA", "LTH", "LDMC", "SLA")) # optional: select 5 leaf and growth traits
+sp_mean <- sp_mean %>% pivot_wider(names_from = trait, values_from = mean_SES)
+sp_mean[,2:6] <- scale(sp_mean[,2:6])
+
+dist_euc <- sp_mean %>% column_to_rownames(var = "species")
+dist_euc <- dist(dist_euc, method = "euclidean") # Compute distance matrix
+hclusters <- hclust(dist_euc, method = "ward.D2") # Hierarchical clustering
+
+fviz_dend(hclusters, cex = 0.8, k = 3, rect = TRUE, scale = "none", labels_track_height = 4.5, type = "rectangle", k_colors = c("#1b9e77", "#7570b3", "#d95f02"))
+# print 600 x 450, change k = 5
+
+groups_3 <- as.data.frame(cutree(hclusters, k = 3)) # 3 clusters makes sense
+sp_clust <- groups_3 %>% rownames_to_column(var = "species") %>% remove_rownames()
+sp_clust <- rename(sp_clust, clust3 = `cutree(hclusters, k = 3)`)
+
+sp_mean <- left_join(sp_mean, sp_clust, by = "species")
+main_pcs <- prcomp(sp_mean[,2:6], center = F, scale. = F)
+
+fviz_pca_biplot(main_pcs, habillage = sp_mean$clust3, addEllipses = TRUE, geom = "point", repel = T,
+                col.var="black", title = "Species clusters") +
+                theme_classic() + scale_color_manual(values=c("#d95f02", "#1b9e77", "#7570b3")) +
+                scale_fill_manual(values=c("#d95f02", "#1b9e77", "#7570b3"))
+
+rm(groups3)
+```
+
+
+# Sorting species by Ellenberg-type indicator values (Moisture) or MAT from Lynn et al.
+```{r}
+# Sources: https://onlinelibrary.wiley.com/doi/full/10.1111/jvs.13168
+# https://floraveg.eu/download/
+
+etiv <- readr::read_tsv("../Input data/Ellenberg_disturbance.txt", guess_max = Inf) # Ellenberg-type indicator values
+#etiv$taxon_simpl <- str_replace_all(etiv$TaxonName, " aggr.", "")
+
+classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
+classification$Type <- case_when(str_detect(classification$species, "Agrostis|Anthoxanthum|Carex|Festuca|Poa|Avenella|Deschampsia|Nardus") ~ "Graminoids", TRUE ~ "Forbs")
+
+MAT <- readr::read_tsv("../Input data/MAT Lynn et al.txt")
+MAT <- as.data.frame(MAT)
+traits_MAT <- traits_f %>% ungroup() %>% left_join(MAT, by = "species")
+traits_MAT <- traits_MAT %>% mutate(siteID = factor(siteID, levels = c("Ulvehaugen", "Gudmedalen", "Skjelingahaugen")))
+traits_MAT <- filter(traits_MAT, !c(siteID == "Ulvehaugen" & trait == "δ13C"))
+traits_MAT <- traits_MAT %>% left_join(classification, by = "species")
+#sp_moisture <- traits_f %>% ungroup() %>% select(species) %>% unique() %>% left_join(etiv[,c(25,6)], by = c("species" = "taxon_simpl"))
+# Scorzoneroides autumnalis instead of Leontodon autumnalis. Mismachted, but moisture == 5.5
+#sp_moisture[sp_moisture$species == "Leontodon autumnalis", "Moisture"] <- "5.5" # X means species is indifferent to that factor
+
+cor_plots <- ggplot(traits_MAT, aes(x = MAT_C, y = SES)) + geom_point(aes(color = Type)) +
+  facet_wrap(~ trait, ncol = 4, scales = "free_x", labeller = label_parsed) +
+  theme_classic() +
+  theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 1), legend.position = "top") +
+  labs(title = NULL, x = "Mean annual temperature [°C]", y = "Cohen's d") +
+  geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
+  #scale_color_manual(values = c("#c6dbef", "#6baed6", "#08519c")) +
+  geom_smooth(aes(color = Type), method = "lm", se = TRUE, linetype = "solid") +  # Add regression line with confidence interval, alternative: no aes and color = "black"
+  stat_poly_eq(aes(label = after_stat(paste(eq.label, p.value.label, sep = "*\", \"*")), color = Type),
+    formula = y ~ x, parse = TRUE, size = 3) # Include p-value
+# print 800 x 600
+```
+
+#Species trait tables
+```{r}
+#n_obs <- traits4 %>% filter(!is.na(SES)) %>% group_by(siteID, trait) %>% mutate(n_obs = n()) %>% sample_n(1) %>% select(siteID, trait, n_obs)
+
+species_SES_table <- traits_f %>% group_by(species, trait) %>% mutate(mean_SES = var(SES)) %>% # change mean to var
+  select(species, trait, mean_SES) %>% sample_n(1) %>%
+  pivot_wider(names_from = trait, values_from = mean_SES)
+species_SES_table$mean_overall <- rowMeans(abs(species_SES_table[,2:11]), na.rm = TRUE)
+
+trait_SES_table <- traits_f %>% group_by(trait) %>% summarize(meanSES = mean(SES), absSES = mean(abs(SES)),
+                                                           varSES = var(SES), nsamples = n())
+cor.test(trait_SES_table$absSES, trait_SES_table$varSES, method = "pearson")
+
+#_______________________________________________________________________________
+sp_tables <- traits_f  %>% select(siteID, species, trait, SES) #%>% filter(trait != "C:N")
+
+data_all_sites <- sp_tables %>% mutate(siteID = "overall") %>% group_by(species, trait) %>% mutate(SES = mean(SES)) %>% sample_n(1) %>% ungroup()
+sp_tables <- sp_tables %>% bind_rows(data_all_sites)
+sp_tables$precip <- case_when(sp_tables$siteID == "Ulvehaugen" ~ "low", sp_tables$siteID == "Gudmedalen" ~ "medium",
+                                 sp_tables$siteID == "Skjelingahaugen" ~ "high", sp_tables$siteID == "overall" ~ "overall")
+sp_tables <- sp_tables %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall"))) %>% select(-c(siteID))
+
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Veronica alpina", "Sibbaldia procumbens", "Salix herbacea", "Astragalus alpinus", "Carex bigelowii", "Viola biflora", "Saussurea alpina", "Thalictrum alpinum", "Poa alpina", "Alchemilla alpina", "Bistorta vivipara", "Carex vaginata", "Nardus stricta", "Campanula rotundifolia", "Anthoxanthum alpinum", "Agrostis capillaris", "Leontodon autumnalis"))) # SORTED BY MEAN ANNUAL GROWING TEMPERATURE FOR THE GEOGRAPHIC RANGE FROM LYNN
+
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Carex bigelowii", "Poa alpina", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum alpinum", "Campanula rotundifolia", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta"))) # GENERALIST V ALPINE
+
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Alchemilla alpina", "Astragalus alpinus", "Bistorta vivipara", "Campanula rotundifolia", "Leontodon autumnalis", "Salix herbacea", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina", "Viola biflora", "Agrostis capillaris", "Anthoxanthum alpinum", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina"))) # GRAMINOIDS V FORBS
+
+#sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Saussurea alpina", "Alchemilla alpina", "Bistorta vivipara", "Carex bigelowii", "Carex vaginata", "Nardus stricta", "Poa alpina", "Salix herbacea", "Sibbaldia procumbens", "Thalictrum alpinum", "Agrostis capillaris", "Anthoxanthum alpinum", "Astragalus alpinus", "Campanula rotundifolia", "Leontodon autumnalis", "Veronica alpina", "Viola biflora"))) # GROUPS BASED ON CLUSTER ANALYSIS (3/5)
+
+sp_tables <- sp_tables %>% mutate(species = factor(species, levels = c("Agrostis capillaris", "Anthoxanthum alpinum", "Bistorta vivipara", "Carex vaginata", "Leontodon autumnalis", "Nardus stricta", "Poa alpina", "Salix herbacea", "Viola biflora", "Alchemilla alpina", "Astragalus alpinus", "Campanula rotundifolia", "Carex bigelowii", "Saussurea alpina", "Sibbaldia procumbens", "Thalictrum alpinum", "Veronica alpina"))) # GROUPS BASED ON CLUSTER ANALYSIS FOR SES VALUES!!
+
+sp_tables <- sp_tables %>% ungroup() %>% complete(species, trait, precip, fill = list(SES = NA))
+
+library(tibble)
+
+annot_df <- tibble(trait = rep(c("H", "SLA", "δ13C"), each = 2), x = 4.35, y = rep(c(8.7, 3.7), times = 3), label = rep(c("Forbs 🡺", "Graminoids"), times = 3))
+if (is.factor(sp_tables$trait)) annot_df$trait <- factor(annot_df$trait, levels = levels(sp_tables$trait)) # "LDMC", "C:N", "δ15N"
+
+points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
+  geom_point(data = filter(sp_tables, !is.na(SES)), aes(size  = abs(SES), color = SES > 0)) +
+  geom_point(data  = filter(sp_tables, is.na(SES)), aes(size = 1), shape = 45, color = "black") +
+  scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
+  scale_size_continuous(range = c(0.5,6), breaks = c(0.1, 1, 2, 3)) + # c(1, 10)
+  scale_y_discrete(limits = rev(levels(sp_tables$species))) + theme_classic() +
+  labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) +
+  geom_hline(aes(yintercept = 6.5), lty = 2, linewidth = 0.25) +
+  facet_wrap(~ trait, ncol = 4) + # scales = "free"
+  geom_text(data = annot_df, aes(x = x, y = y, label = label), angle = 90, size = 4, inherit.aes = FALSE) +
+  annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.2) +
+  theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"),
+        axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.text.y = element_text(face = "italic"), axis.line = element_blank(),
+        strip.background = element_rect(fill = NA, linewidth = 1))
+
+#  geom_text(data = annot_df, aes(x = x, y = y, label = label), angle = 90, size = 4, inherit.aes = FALSE) +
+
+#  annotate("text", x = 4.3, y = 8.7, label = "Forbs 🡺", angle = 90, size = 4) + # y = 8.7, label = "Forbs 🡺"
+#  annotate("text", x = 4.3, y = 3.7, label = "Graminoids", angle = 90, size = 4) + # "🡸 Generalist" | y = 3.7, label = "Graminoids"
+
+# print 800 x 1000
+# Helpful Unicode tables for arrows: https://en.wikipedia.org/wiki/Arrow_(symbol)
+
+points_plot <- ggplot(sp_tables, aes(x = precip, y = species)) +
+  geom_point(data = filter(sp_tables, !is.na(SES)), aes(size  = abs(SES), color = SES > 0)) +
+  geom_point(data  = filter(sp_tables, is.na(SES)), aes(size = 1), shape = 45, color = "black") +
+  scale_color_manual(values = c("red", "blue"), labels = c("negative", "positive")) +
+  scale_size_continuous(range = c(0.5,6), breaks = c(0.1, 1, 2, 3)) + # c(1, 10)
+  scale_y_discrete(limits = rev(levels(sp_tables$species))) + theme_classic() +
+  labs(title = NULL, x = "Precipitation", y = NULL, size = "Standardized effect size [Cohen's d]", color = NULL) +
+  geom_hline(yintercept = c(3.5, 8.5), lty = 1, linewidth = 0.25) + # 7.5, 16.5
+  facet_wrap(~ trait, ncol = 4) + # scales = "free"
+  annotate("text", x = 4.35, y = c(12.5, 6, 2), label = c("A", "B", "C"), angle = 0, size = 4) + # 17, 12, 4
+  annotate("rect", xmin = 3.5, xmax = 4.5, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.2) +
+  theme(legend.position = "top", strip.text = element_text(size = 10, face = "bold"),
+        axis.title = element_text(size = 12), panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+        axis.text.y = element_text(face = "italic"))
+
+outdir <- "../Text and pictures/for publication"
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+ggsave(filename = file.path(outdir, "points_plot_ForbGram9.png"), plot = points_plot, width = 20.8, height = 26, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
+
+rm(sp_tables, data_all_sites, points_plot, outdir, annot_df)
+```
+
+# Does Cmean influence d?
+```{r}
+traits_cor <- traits_f %>% mutate(siteID = factor(siteID, levels = c("Ulvehaugen", "Gudmedalen", "Skjelingahaugen")))
+
+traits_cor <- traits_cor %>% mutate(trait = factor(trait,
+              levels = c("H", "LA", "LTH", "LDMC", "SLA", "LCC", "LNC", "C:N", "δ13C", "δ15N"),
+              labels = c(expression(paste("H [cm]")), expression(paste("LA [cm"^2*"]")), expression(paste("LTH [mm]")), expression(paste("LDMC [mg g"^-1*"]")), expression(paste("SLA [cm"^2*" g"^-1*"]")), expression(paste("LCC [%]")), expression(paste("LNC [%]")), expression(paste("C:N Ratio")), expression(paste("δ13C [‰]")), expression(paste("δ15N [‰]")))))
+
+cor_plots <- ggplot(traits_cor, aes(x = C_mean, y = SES)) + geom_point(aes(color = siteID)) +
+  facet_wrap(~ trait, ncol = 4, scales = "free_x", labeller = label_parsed) +
+  theme_classic() +
+  theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 1), legend.position = "top") +
+  labs(title = NULL, x = "Control trait mean", y = "Cohen's d") +
+  geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
+  scale_color_manual(values = c("#c6dbef", "#6baed6", "#08519c")) +
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "solid") +  # Add regression line with confidence interval
+  stat_poly_eq(
+    aes(label = after_stat(paste(eq.label, p.value.label, sep = "*\", \"*"))),
+    formula = y ~ x, parse = TRUE, size = 3) # Include p-value
+# print 800 x 600
+
+rm(traits_cor, cor_plots)
+```
+
+
+#  Testing for differences in variance between traits using f-tests
+```{r}
+trait_comp <- traits_f %>% mutate(trait = "overall") %>% rbind(traits_f)
+site_comp <- traits_f %>% mutate(siteID = "overall") %>% rbind(traits_f)
+species_comp <- traits_f %>% mutate(species = "overall") %>% rbind(traits_f)
+Ulv <- site_comp %>% filter(siteID %in% c("overall", "Ulvehaugen"))
+Gud <- site_comp %>% filter(siteID %in% c("overall", "Gudmedalen"))
+Skj <- site_comp %>% filter(siteID %in% c("overall", "Skjelingahaugen"))
+
+results <- data.frame(
+  trait = character(),
+  df_trait = integer(),
+  df_overall = integer(),
+  f_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE)
+
+# Loop through all traits except "overall"
+for(t in unique(trait_comp$trait[trait_comp$trait != "overall"])) {
+  ses_trait <- trait_comp$SES[trait_comp$trait == t]
+  ses_overall <- trait_comp$SES[trait_comp$trait == "overall"]
+  test <- var.test(ses_trait, ses_overall) # F-test for comparing variances
+  
+  results <- rbind(results, data.frame(
+    trait = t,
+    df_trait = test$parameter[1],
+    df_overall = test$parameter[2],
+    f_statistic = test$statistic,
+    p_value = test$p.value))}
+
+
+# Loop through all traits and compare between site and overall
+for(t in unique(Skj$trait)) {
+  ses_site <- Skj$SES[Skj$trait == t & Skj$siteID == "Skjelingahaugen"]
+  ses_overall <- Skj$SES[Skj$trait == t & Skj$siteID == "overall"]
+  test <- var.test(ses_site, ses_overall) # F-test for comparing variances
+  
+  results <- rbind(results, data.frame(
+    trait = t,
+    df_trait = test$parameter[1],
+    df_overall = test$parameter[2],
+    f_statistic = test$statistic,
+    p_value = test$p.value))}
+
+# Loop through species and compare species Cohen's d variance to overall variance
+for(s in unique(species_comp$species[species_comp$species != "overall"])) {
+  ses_single <- species_comp$SES[species_comp$species == s]
+  ses_overall <- species_comp$SES[species_comp$species == "overall"]
+  test <- var.test(ses_single, ses_overall) # F-test for comparing variances
+  
+  results <- rbind(results, data.frame(
+    species = s,
+    df_trait = test$parameter[1],
+    df_overall = test$parameter[2],
+    f_statistic = test$statistic,
+    p_value = test$p.value))}
+
+rm(trait_comp, site_comp, species_comp, Ulv, Gud, Skj, results, test, ses_overall, ses_traits, results, ses_site, s, t, ses_single, )
+```
+
+
+# Testing for differences using t-tests and f-tests
+```{r}
+classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
+classification$Type <- case_when(str_detect(classification$species, "Agrostis|Anthoxanthum|Carex|Festuca|Poa|Avenella|Deschampsia|Nardus") ~ "Graminoids", TRUE ~ "Forbs")
+classification <- left_join(classification, sp_clust, by = "species")
+
+# comparison alpine vs generalist species and graminoids vs. Forbs
+SES_compare <- traits_f %>% select(siteID, species, trait, SES) %>% left_join(classification, by = "species")
+#SES_compare$SES <- abs(SES_compare$SES) # Optional. Depending if you want to compare actual or absolute SES values
+
+SES_compare <- filter(SES_compare, species != "Saussurea alpina") # OPTIONAL: In case of t-tests between clusters and not growth forms
+
+#Checking t-test assumptions (normality and equal variances) change grouping to clust3 / Type / alpine
+norm_test <- SES_compare %>% group_by(trait, as.factor(Type)) %>% summarise(p_value = shapiro.test(SES)$p.value) # no violations of normal distribution at p < 0.5
+norm_plots <- ggplot(SES_compare, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + Type) # qq-plot visual inspection
+var_test <- SES_compare %>% group_by(trait) %>% summarise(p_value = var.test(SES ~ as.factor(Type))$p.value)
+# unequal variances in graminoids and herbs for LA, Lth, D15N and LDMC. For these traits, report Welch’s t-test (var.equal = FALSE)
+
+#Running t-tests
+t_test_results <- SES_compare %>% do(t_test = t.test(SES ~ as.factor(Type), data = ., var.equal = T)) %>% ungroup() # change var.equal
+
+mean_test_results <- t_test_results %>% mutate(
+                     t_statistic = sapply(t_test, function(x) x$statistic), # t-statistic
+                     df = sapply(t_test, function(x) x$parameter[1]),
+                     estimate1 = sapply(t_test, function(x) x$estimate[1]),
+                     estimate2 = sapply(t_test, function(x) x$estimate[2]),
+                     p_value = sapply(t_test, function(x) x$p.value)) %>%
+    select(trait, t_statistic, df, estimate1, estimate2, p_value) 
+
+var_test_results <- SES_compare %>% do(var_test = var.test(SES ~ factor(Type, levels = c("Forbs", "Graminoids")), data = .)) %>% ungroup() # alternatively: factor(alpine, levels = c(0, 1))
+var_test_summary <- var_test_results %>% mutate(
+    f_statistic = sapply(var_test, function(x) x$statistic), # f-statistic and ratio of variances are the same.
+    df1 = sapply(var_test, function(x) x$parameter[1]),
+    df2 = sapply(var_test, function(x) x$parameter[2]),
+    p_value = sapply(var_test, function(x) x$p.value)) %>%
+  select(trait, f_statistic, df1, df2, p_value)
+
+
+#_______________________________________________________________________________
+
+site_comp <- traits_f %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Gudmedalen" ~ "Gud"),
+                                  comp2 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Skjelingahaugen" ~ "Skj"),
+                                  comp3 = case_when(siteID == "Gudmedalen" ~ "Gud", siteID == "Skjelingahaugen" ~ "Skj"))
+
+norm_test <- site_comp %>% group_by(trait, siteID) %>% summarise(p_value = shapiro.test(SES)$p.value) # non-normal distribution for H in Ulvehaugen and LDMC in Ulv and Skj
+norm_plots <- ggplot(site_comp, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + siteID) # qq-plot visual inspection
+
+comp3 <- site_comp %>% select(-c(comp2, comp1)) %>% na.omit() %>% group_by(trait)
+var_test <- comp3 %>% group_by(trait) %>% summarise(p_value = var.test(SES ~ as.factor(siteID))$p.value) # unequal variance only for D15N between Ulv:Skj / low:high
+
+t_test_results <- comp1 %>% do(t_test = t.test(SES ~ as.factor(comp1), data = ., var.equal = F)) %>% ungroup()
+w_test_results <- comp1 %>% do(w_test = wilcox.test(SES ~ as.factor(comp1), data = .)) %>% ungroup()
+
+wil_tests <- comp3 %>% summarise(wilcox_test = list(wilcox.test(SES ~ as.factor(comp3))), .groups = "drop") %>%
+  mutate(p_value = map_dbl(wilcox_test, ~ .x$p.value)) %>% select(-wilcox_test)
+
+p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value)
+#test <- comp1 %>% group_by(trait, comp1) %>% summarize(mean = mean(trait_mean)) # shows trait means by group
+
+print(p_values)
+
+```
+
+
+# Summarizing patterns
+```{r}
+classification <- read_tsv("../Input data/species classifications.txt", guess_max = Inf) # table that contains classification (alpine vs. generalist)
+classification$Type <- case_when(str_detect(classification$species, "Agrostis|Anthoxanthum|Carex|Festuca|Poa|Avenella|Deschampsia|Nardus") ~ "Graminoids", TRUE ~ "Forbs")
+
+# species with most medium to high effect sizes, alpine vs. generalists
+SES_lim <- traits_f %>% select(siteID, species, trait, SES) %>% group_by(species)
+SES_lim <- SES_lim %>% summarize(total = n(), limit_1 = sum(abs(SES) >= 1), limit_08 = sum(abs(SES) >= 0.8),
+                                 limit_05 = sum(abs(SES) >= 0.5), limit_02 = sum(abs(SES) >= 0.2))
+SES_lim <- SES_lim %>% left_join(classification[,1:4], by = "species") %>% mutate(alpine = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist")))
+
+fun_type <- SES_lim %>% group_by(Type) %>% summarize(across(2:6, sum))
+fun_type <- fun_type %>% mutate(total = total - limit_02, limit_02 = limit_02 - limit_05, limit_05 = limit_05 - limit_08, limit_08 = limit_08 - limit_1) %>%
+           pivot_longer(cols = 2:6, names_to = "Category", values_to = "Value") %>% ungroup() # changing counts so that each column contains only the surplus
+fun_type$Category <- factor(fun_type$Category, levels = c("total", "limit_02", "limit_05", "limit_08", "limit_1"))
+fun_type$perc <- case_when(fun_type$Type == "Forbs" ~ fun_type$Value/261 *100,
+                           fun_type$Type == "Graminoids" ~ fun_type$Value/153 *100)
+fun_type <- fun_type %>% mutate(color_group = if_else(Category %in% c("limit_08", "limit_1"), "group_w", "group_b")) 
+
+bar_plot <- ggplot(fun_type, aes(x = Type, y = Value, fill = Category)) +
+  geom_bar(stat = "identity", width = 0.7, color = "black") + # or position = "dodge" # or without position and alpha, as stacked graph
+  scale_fill_manual(values = c("white", "#cccccc", "#969696", "#636363", "#252525"),
+                    labels = c("< 0.2", "0.2 - 0.5", "0.5 - 0.8", "0.8 - 1", "\u2265 1"), name = "SES category") +
+  facet_wrap(~ Type, scales = "free", ncol = 2) +
+  labs(title = NULL, x = "", y = "Number of effect sizes") +
+  theme_classic() + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), text = element_text(size = 14)) +
+  geom_text(aes(label = paste0(sprintf("%1.1f", perc), "%"), group = as.factor(Category), color = color_group), position = position_stack(vjust = 0.5)) + scale_color_manual(values = c("black", "white")) + guides(color = "none")
+# print 500 x 450
+
+outdir <- "../Text and pictures/for publication"
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+ggsave(filename = file.path(outdir, "bar_plot2.png"), plot = bar_plot, width = 12, height = 10.8, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
+
+#SES_lim$fraction <- SES_lim$sum_SES05/SES_lim$total # the fraction is important because there are more alpine than generalist species
+
+#histograms
+hist_table <- traits_f %>% ungroup() %>% select(species, SES) %>% left_join(classification[,1:4], by = "species") %>%
+  mutate(Group = str_replace_all(alpine, c("1" = "Alpine", "0" = "Generalist")))
+hist_table$Type <- factor(hist_table$Type, levels = c("Forbs", "Graminoids"))
+
+percentiles <- aggregate(SES ~ Type, data = hist_table, function(x) c(mean = mean(x), Q05 = quantile(x, 0.05), Q95 = quantile(x, 0.95)))
+percentiles <- do.call(data.frame, percentiles) # Flatten the nested columns
+colnames(percentiles) <- c("Type", "mean", "Q05", "Q95")
+
+hist_plot <- ggplot(hist_table, aes(x = SES, fill = Type)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 30, color = "black") +
+  geom_vline(data = percentiles, aes(xintercept = mean), linetype = "dashed", linewidth = 1, color = c("black", "red")) +
+  geom_vline(data = percentiles, aes(xintercept = Q05, color = Type), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
+  geom_vline(data = percentiles, aes(xintercept = Q95, color = Type), linetype = "dotted", linewidth = 1, color = c("black", "red")) +
+  scale_fill_manual(values = c("darkgrey", "red")) +
+  scale_color_manual(values = c("darkgrey", "red")) +
+  labs(title = NULL, x = "Cohen's d", y = "Number of effect sizes") +
+  theme_classic() +
+  theme(legend.position = "top", text = element_text(size = 14))
+
+combined_plot <- plot_grid(hist_plot, bar_plot, labels = c("a", "b"), ncol = 2, align = "h", axis =  "tb", rel_widths = c(1,1)) # print 800 x 500
+```
+
+# Plotting SES values: Violin plots
+```{r}
+SES_sites <- traits_f %>% select(siteID, species, trait, SES)
+
+SES_sites$precip <- case_when(SES_sites$siteID == "Ulvehaugen" ~ "low", SES_sites$siteID == "Gudmedalen" ~ "medium", SES_sites$siteID == "Skjelingahaugen" ~ "high")
+
+data_all_sites <- SES_sites %>% mutate(precip = "overall")
+SES_combined <- bind_rows(SES_sites, data_all_sites)
+SES_combined <- SES_combined %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall")))
+
+#Testing assumptions. If n > 30 t-test is not important
+norm_test <- SES_combined %>% group_by(trait, precip) %>% summarise(p_value = shapiro.test(SES)$p.value) # H and LDMC not normally distributed -> Wilcoxon signed-rank test
+norm_plots <- ggplot(SES_combined, aes(sample = SES)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + precip) # qq-plot visual inspection
+
+# Are mean SES values significantly different from 0?
+t_tests <- SES_combined %>% select(-c(siteID, species)) %>% group_by(precip, trait) %>%
+  summarise(t_test = list(t.test(SES, mu = 0, var.equal = F)), .groups = "drop") %>%  # Perform t-test against 0
+  mutate(estimate = map_dbl(t_test, ~ .x$estimate),  # Extract mean SES
+         t_value = map_dbl(t_test, ~ .x$statistic),  # Extract t-statistic
+         p_value = map_dbl(t_test, ~ .x$p.value)     # Extract p-value
+  ) %>% select(-t_test)
+
+t_tests2 <- SES_combined %>% select(-c(siteID, species)) %>% group_by(precip, trait) %>%
+  summarise(wilcox_test = list(wilcox.test(SES, mu = 0)), .groups = "drop") %>%  # Perform Wilcoxon test against 0
+  mutate(estimate = map_dbl(wilcox_test, ~ median(SES_combined$SES)),  # Extract median SES (since Wilcoxon is non-parametric)
+         W_value = map_dbl(wilcox_test, ~ .x$statistic),  # Extract Wilcoxon test statistic (W)
+         p_value = map_dbl(wilcox_test, ~ .x$p.value)     # Extract p-value
+  ) %>% select(-wilcox_test)
+
+SES_mean <- SES_combined %>% group_by(precip, trait) %>% summarize(mean_SES = mean(SES), var_SES = var(SES), .groups = "drop")
+SES_summary <- left_join(SES_mean, t_tests[,c(1:2,5)], by = c("precip", "trait"))
+SES_summary <- SES_summary %>% mutate(significance = case_when(p_value < 0.05 ~ "🞲", p_value < 0.1  ~ "+", TRUE ~ ""),
+                                label_text = paste0(round(mean_SES, 2), " ", significance))
+
+sites_comp <- SES_summary %>% filter(mean_SES > -0.8) %>% group_by(precip) %>%
+              summarise(mean_abs_SES = mean(abs(mean_SES)), mean_var = mean(var_SES)) # overall sites comparison
+
+violin_plot <- ggplot(SES_combined, aes(x = precip, y = SES, fill = precip)) +
+  geom_half_violin(side = "l", trim = TRUE, color = NA) +
+  geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
+  geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
+  geom_text(data = SES_summary, aes(x = precip, y = label_text, label = label_text), y = 1.9, vjust = -1, size = 3.5) +
+  geom_point(stat = "summary", fun = "mean", size = 3, shape = 18) + 
+  geom_errorbar(stat = "summary", fun.data = "mean_cl_normal", fun.args = list(mult = qnorm(0.975)),  width = 0, linewidth = 1) + # 
+  # mean_se standard error, mean_cl_normal confidence intervals, mean_sdl standard deviation
+  #before it was mean_se (standard error) and fun.args = list(mult = 1.96), that is different from actual confidence interval
+  facet_wrap(~ trait, scales = "free", ncol = 2) + # Facet by trait
+  scale_fill_manual(values = c("#c6dbef", "#6baed6", "#2171b5", "grey")) +
+  theme_classic() +
+  labs(title = NULL, x = "Precipitation", y = "Standardized effect size [Cohen's d]") +
+  theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12), axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8), strip.background = element_rect(fill = NA, linewidth = 0.8)) +
+  ylim(-2.62, 2.62) # otherwise ylim(-5,5)
+
+# print 800 x 1000
+outdir <- "../Text and pictures/for publication"
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+ggsave(filename = file.path(outdir, "violin_plots_SES3.png"), plot = violin_plot, width = 19.2, height = 24, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
+
+rm(SES_sites, data_all_sites, SES_combined, SES_summary, violin_plot, t_tests, norm_plots, norm_test, SES_mean, sites_comp, t_tests2,)
+#_______________________________________________________________________________ violin plots for all traits and across sites
+#multi_bp <- ggplot(SES_sites, aes(x = trait, y = SES, group = trait)) + geom_violin(aes(fill = trait), trim = T) +
+#  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) + stat_summary(fun.data = "mean_cl_boot", geom = "pointrange",
+#               colour = "black") + ylim(-2.5,2.5) + geom_jitter(color = "black", height = NULL, width = 0.3, alpha = 0.1)
+# + geom_boxplot(aes(fill = trait), outlier.alpha = 0)
+
+#_______________________________________________________________________________ violin plots for all traits and across sites but with mean values for species
+#SES_sites <- aggregate(SES_sites$SES, by = SES_sites[,c(2,3)], FUN = mean)
+#SES_sites <- SES_sites %>% rename(`mean SES` = x)
+
+#multi_bp <- ggplot(SES_sites, aes(x = trait, y = `mean SES`, group = trait)) +
+#  geom_boxplot(aes(fill = trait), outlier.alpha = 0) +
+#  theme_classic() + geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
+#  geom_jitter(color = "black", height = NULL, width = 0.3, alpha = 0.5) + ylim(-2.5,2)
+```
+
+# Functional differences between sites (trait means)
+```{r}
+site_comp <- traits %>% filter(warming == "C") %>% group_by(siteID, species, trait) %>%
+             summarize(trait_mean = mean(value)) %>% ungroup() # site comparisons. 23 trait measurements missing.
+
+site_comp$trait <- case_when(site_comp$trait == "leaf_area_cm2" ~ "LA", site_comp$trait == "leaf_thickness_mm" ~ "LTH", site_comp$trait == "sla_cm2_g" ~ "SLA", site_comp$trait == "plant_height_cm" ~ "H", site_comp$trait == "ldmc" ~ "LDMC", site_comp$trait == "c_n" ~ "C:N", site_comp$trait == "c_percent" ~ "LCC", site_comp$trait == "d13c" ~ "δ13C", site_comp$trait == "d15n" ~ "δ15N", site_comp$trait == "n_percent" ~ "LNC")
+
+site_comp <- site_comp %>% mutate(trait = factor(trait,
+              levels = c("H", "LA", "LTH", "LDMC", "SLA", "LCC", "LNC", "C:N", "δ13C", "δ15N"),
+              labels = c(expression(paste("H [cm]")), expression(paste("LA [cm"^2*"]")), expression(paste("LTH [mm]")), expression(paste("LDMC [mg g"^-1*"]")), expression(paste("SLA [cm"^2*" g"^-1*"]")), expression(paste("LCC [%]")), expression(paste("LNC [%]")), expression(paste("C:N Ratio")), expression(paste("δ13C [‰]")), expression(paste("δ15N [‰]")))))
+
+site_comp <- site_comp %>% group_by(species, trait) %>% mutate(Freq = n()) %>% ungroup()
+site_comp <- site_comp %>% filter(Freq == 3) %>% select(-c(Freq)) # filtering out incomplete trait measurements (not in all 3 sites)
+test <- as.data.frame(table(site_comp$trait))
+
+site_comp$precip <- case_when(site_comp$siteID == "Ulvehaugen" ~ "low", site_comp$siteID == "Gudmedalen" ~ "medium", site_comp$siteID == "Skjelingahaugen" ~ "high")
+
+data_all_sites <- site_comp %>% mutate(precip = "overall")
+data_combined <- bind_rows(site_comp, data_all_sites)
+data_combined <- data_combined %>% mutate(precip = factor(precip, levels = c("low", "medium", "high", "overall")))
+
+mean_across <- data_combined %>% group_by(precip, trait) %>% summarize(overall_mean = mean(trait_mean), .groups = "drop")
+
+violin_plot <- ggplot(data_combined, aes(x = precip, y = trait_mean, fill = precip)) +
+  geom_half_violin(side = "l", trim = TRUE, color = NA) +
+  geom_half_point(side = "r", position = position_jitter(width = 0), alpha = 0.5, shape = 16) +
+  geom_hline(data = filter(mean_across, precip == "overall"), aes(yintercept = overall_mean), lty = 2, linewidth = 0.25) +
+  geom_point(stat = "summary", fun = "mean", size = 3, shape = 18) + 
+  geom_errorbar(stat = "summary", fun.data = "mean_se", fun.args = list(mult = 1.96), width = 0, linewidth = 1) +
+  facet_wrap(~ trait, scales = "free", ncol = 2, labeller = label_parsed) + # Facet by trait
+  scale_fill_manual(values = c("#c6dbef", "#6baed6", "#2171b5", "grey")) +
+  theme_classic() +
+  labs(title = NULL, x = "Precipitation", y = "Trait means") +
+  theme(legend.position = "none", strip.text = element_text(size = 10, face = "bold"), axis.title = element_text(size = 12), axis.line = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8), strip.background = element_rect(fill = NA, linewidth = 0.8))
+  #ylim(-2.62, 2.62) # otherwise ylim(-5,5)
+
+# print 800 x 1000
+outdir <- "../Text and pictures/for publication"
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+ggsave(filename = file.path(outdir, "violin_plots_trait_means2.png"), plot = violin_plot, width = 19.2, height = 24, units = "cm", dpi = 600, device = ragg::agg_png) # or cairo_png
+
+# Assumption testing first
+norm_test <- site_comp %>% group_by(trait, precip) %>% summarise(p_value = shapiro.test(trait_mean)$p.value) # Many non-normally distributed
+norm_plots <- ggplot(site_comp, aes(sample = trait_mean)) + geom_qq() + geom_qq_line() + facet_wrap(~ trait + precip, scales = "free")
+
+site_comp <- site_comp %>% mutate(comp1 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Gudmedalen" ~ "Gud"),
+                                  comp2 = case_when(siteID == "Ulvehaugen" ~ "Ulv", siteID == "Skjelingahaugen" ~ "Skj"),
+                                  comp3 = case_when(siteID == "Gudmedalen" ~ "Gud", siteID == "Skjelingahaugen" ~ "Skj"))
+
+comp3 <- site_comp %>% select(-c(comp2, comp1)) %>% na.omit() %>% group_by(trait)
+var_test <- comp3 %>% group_by(trait) %>% summarise(p_value = leveneTest(trait_mean ~ as.factor(comp3))$"Pr(>F)"[1]) # non equal variance for SLA between Gud:Skj Medium:high
+
+t_test_results <- comp3 %>% do(t_test = t.test(trait_mean ~ as.factor(comp3), data = ., var.equal = T)) %>% ungroup()
+
+p_values <- t_test_results %>% mutate(p_value = sapply(t_test, function(x) x$p.value)) %>% select(trait, p_value)
+
+wil_tests <- comp3 %>% summarise(wilcox_test = list(wilcox.test(trait_mean ~ as.factor(comp3))), .groups = "drop") %>%
+  mutate(p_value = map_dbl(wilcox_test, ~ .x$p.value)) %>% select(-wilcox_test)
+
+test <- comp1 %>% group_by(trait, comp1) %>% summarize(mean = mean(trait_mean)) # shows trait means by group
+
+print(p_values)
+# Significant differences: Ulv Gud only D13C, p = 0.05397769
+# Ulv Skj only LCC p = 0.01907241	
+# Gud Skj H p = 0.00504747
+rm(mean_across, data_combined, data_all_sites, test)
+```
+
+# Plotting SES values
+```{r}
+SES_sites <- traits4 %>% select(c(1:3,5,8,14)) %>% na.omit()
+
+SES_sites <- aggregate(SES_sites$SES, by = SES_sites[,c(1,3)], FUN = mean)
+SES_sites <- SES_sites %>% rename(`mean SES` = x)
+SES_sites$level <- case_when(SES_sites$`mean SES` < 0 ~ "negative", SES_sites$`mean SES` > 0 ~ "positive")
+
+test <- SES_sites %>% group_by(trait) %>% mutate(mean_trait = mean(`mean SES`)) %>% sample_n(1) %>% select(c(trait, mean_trait))
+
+SES_sites$siteID <- factor(SES_sites$siteID, levels = c("Ulvehaugen", "Gudmedalen", "Skjelingahaugen"))
+SES_sites$trait <- factor(SES_sites$trait, levels = c("LCC", "LNC", "C:N", "δ13C", "δ15N", "H", "LA", "LDMC", "LTH", "SLA"))
+
+SES_plot <- ggplot(SES_sites, aes(x = siteID, y = `mean SES`, shape = level)) +  
+  geom_point(size = 3) +
+  scale_shape_manual(values = c(1, 16)) +
+  geom_hline(yintercept = 0, lty = 2, size = 0.25) +
+  coord_flip() +
+  xlab("") + ylab("Absolute Cohen's d") +
+  theme_bw() +
+  guides(colour = "legend", shape = "none") +
+  facet_grid(. ~ trait) +
+  theme(axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        legend.title = element_blank(),
+        legend.position= "top",
+        legend.text = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.text.x = element_text(angle=45, vjust=.5, size = 16),
+        axis.text.y = element_text(vjust=.5, size = 16),
+        strip.text = element_text(size = 16, face = "bold"))
+
+# print 1200 x 400
+
+SES_sites$siteID <- factor(SES_sites$siteID, levels = c("Skjelingahaugen", "Gudmedalen", "Ulvehaugen"))
+
+SES_plot2 <- ggplot(SES_sites, aes(x = siteID, y = `mean SES`, group = trait)) +
+  geom_line(aes(color = trait), linewidth = 1, alpha = 0.5) +
+  geom_point(aes(color = trait), size = 2) +
+  theme_classic() + xlab("") + ylab("Absolute Cohen's d") +
+  theme(axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14, face = "bold"))
+# print 600 x 400
+```
+
+# Species specific plasticity and succeptibility to warming
+```{r}
+# Species without paired observations (inside and outside OTC) are omitted!!
+distribution <- readr::read_tsv("../Input data/species classifications.txt", guess_max = Inf)
+raw_traits <- readr::read_tsv("../Input data/PFTC6_Incline_clean_leaf_traits_2022.txt", guess_max = Inf)
+
+traits_scaled <- traits %>% as.data.frame() %>% select(species, trait, value)
+traits_scaled <- traits_scaled %>% semi_join(filter(traits4, !is.na(SES)), by = "species") # remove species without SES values
+traits_scaled <- traits_scaled %>% group_by(trait) %>% mutate(scaled_values = scale(value, center = T, scale = T)) %>% ungroup()
+
+species_sd <- aggregate(traits_scaled$scaled_values, by = traits_scaled[,1:2], FUN = na.omit(var))
+species_sd$V1 <- sqrt(species_sd$V1)
+species_sd <- rename(species_sd, sd = V1)
+species_sd <- species_sd %>% group_by(species) %>% summarise(mean_sd = mean(sd, na.rm = T))
+
+species_n <- raw_traits %>% group_by(ID) %>% select(c(species, ID)) %>% slice_sample(n = 1)
+species_n <- as.data.frame(table(species_n$species))
+species_n <- rename(species_n, species = Var1)
+
+mean_abs_SES <- traits4 %>% select(species, SES) %>% na.omit() %>% mutate(SES = abs(SES)) # mean absolute SES per species
+mean_abs_SES <- mean_abs_SES %>% group_by(species) %>% summarise(mean_SES = mean(SES, na.rm = T)) # susceptibility to warming
+
+sgnf_SES <- traits4 %>% filter(SES >= 1 | SES <= -1) %>% group_by(species) %>% summarise(sgnf_SES = n())
+
+species_sd <- species_sd %>% left_join(species_n, by = "species") %>% left_join(distribution, by = "species") %>% left_join(mean_abs_SES, by = "species") %>% left_join(sgnf_SES, by = "species")
+
+rm(traits_scaled, species_n, distribution, raw_traits, mean_abs_SES, sgnf_SES)
+
+```
+
+# DEPRECTAED
+```{r}
+# δ13c only has negative values while δ15N has positive and negative values
+# Somehow for δ15N, values range around 0 so relative sd makes no sense as mean = 0 and sd = 1 ..
+# Instead, use e.g. MAD mean absolute deviation. 1/n * sum(abs(x-mean)). That doesnt solve the problem. The problem is that traits have different units of measurement. To be able to compare variation between traits, I divide sd by mean which is not possible for δ15N. Instead, scale the traits seperately (?)
+# Computation of Cohen's d is not affected by values ranging around 0
+
+species_mad <- aggregate(traits$value, by = traits[,4:5],
+                         FUN = function(x) ie2misc::madstat(x))
+species_sd <- aggregate(traits$value, by = traits[,4:5], FUN = na.omit(var))
+species_sd$x <- sqrt(species_sd$x)
+species_sd <- rename(species_sd, sd = x)
+species_mean <- aggregate(traits$value, by = traits[,4:5], FUN = na.omit(mean))
+
+species_abs_SES <- traits4 %>% na.omit() %>% group_by(species) %>% summarise(mean_SES = mean(abs(SES)))
+
+species_sd <- cbind(species_sd, species_mean[,3])
+species_sd <- rename(species_sd, mean = `species_mean[, 3]`)
+species_sd <- species_sd %>% mutate(rel_sd = sd / mean) #%>% select(-c(sd, mean))
+
+
+rm(species_mean, species_abs_SES)
+```
+
+# plotting relationship between trait plasticity and species type
+```{r}
+p1 <- ggplot(species_sd, aes(x = as.factor(alpine), y = mean_sd)) + geom_boxplot(outlier.alpha = 0) + theme_classic() +
+  geom_jitter(width = 0.3, height = 0, alpha = 0.3) +
+  scale_y_continuous(breaks = c(0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1), limits = c(0.4, 1)) +
+  scale_x_discrete(labels = c("Generalist", "Alpine")) + xlab("") + ylab("Mean sd per species") +
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
+# print 350 x 400
+
+```
+
+# plotting relationship between susceptibility to warming and species type
+```{r}
+p2<- ggplot(species_sd, aes(x = as.factor(alpine), y = mean_SES)) + geom_boxplot(outlier.alpha = 0) + theme_classic() +
+  geom_jitter(width = 0.3, height = 0, alpha = 0.3) +
+  scale_y_continuous(breaks = c(0, 0.2, 0.4, 0.6, 0.8), limits = c(0, 1)) +
+  scale_x_discrete(labels = c("Generalist", "Alpine")) + xlab("") + ylab("Mean absolute SES per species") +
+  theme(axis.text.x = element_text(size = 10), axis.text.y = element_text(size = 10))
+# print 350 x 400
+
+```
+
+# t.tests
+```{r}
+all_cmb <- traits %>% select(-c(blockID, warming, value)) %>% group_by(siteID, species, trait) %>%
+                      slice_sample(n = 1) # all combinations of sites, species and traits
+
+out <- list() #output is list of p-values
+for(i in 1:nrow(all_cmb)){ 
+  tryCatch({
+  cmb <- all_cmb[i,1:3]
+  subset <- filter(traits,  siteID == paste(cmb[1,1]) & species == paste(cmb[1,2]) & trait == paste(cmb[1,3]))
+  t_res <- t.test(subset$value ~ subset$warming)
+  out[[i]]  <- paste(t_res$p.value, i)}, error = function(e){})
+} # in every iteration I filter for one species, trait and site, output is list of p-values
+
+out <- out[lapply(out, length) > 0]
+t_results <- out %>% as.data.frame() %>% t() %>% as.data.frame()
+t_results <- t_results %>% separate_wider_delim(V1, delim = " ", names = c("p-value", "iteration"))
+
+all_cmb <- all_cmb %>% rownames_to_column(var = "iteration") %>% left_join(t_results, by = "iteration")
+sign_cmb <- filter(all_cmb, `p-value` < 0.05)
+```

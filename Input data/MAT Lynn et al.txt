@@ -1,0 +1,18 @@
+species	MAT_C
+Alchemilla alpina	2.4
+Veronica alpina	-0.3
+Saussurea alpina	0.9
+Campanula rotundifolia	5.9
+Poa alpina	1.8
+Astragalus alpinus	0.3
+Thalictrum alpinum	0.9
+Leontodon autumnalis	7.3
+Nardus stricta	5.4
+Carex bigelowii	0.4
+Agrostis capillaris	7
+Bistorta vivipara	2.5
+Salix herbacea	0.1
+Viola biflora	0.5
+Anthoxanthum odoratum	6.9
+Carex vaginata	2.7
+Sibbaldia procumbens	-0.1
